@@ -911,6 +911,7 @@ def classification_management():
                 st.rerun()
 
 # 数据管理
+# 在 app.py 的数据管理部分添加示例数据导入功能
 def data_management():
     """数据管理功能"""
     st.markdown('<div class="sub-header">💾 数据管理</div>', unsafe_allow_html=True)
@@ -937,6 +938,12 @@ def data_management():
                 mime="application/json",
                 use_container_width=True
             )
+        
+        st.markdown("---")
+        st.markdown("**🎓 示例数据**")
+        if st.button("生成同济学生示例数据", use_container_width=True):
+            # 这里可以调用生成示例数据的函数
+            st.info("请在代码中实现示例数据生成功能")
     
     with col2:
         st.markdown("**📥 导入数据**")
