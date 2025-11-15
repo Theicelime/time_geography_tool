@@ -255,7 +255,7 @@ def activity_templates():
             for template_name, template_data in st.session_state.activity_templates.items():
                 with st.container():
                     st.markdown(f"""
-                    <div class="template-card" onclick="alert('点击了{template_name}')">
+                    <div class="template-card">
                         <strong>{template_name}</strong><br>
                         <small>{template_data['demand']} → {template_data['project']} → {template_data['activity']}</small><br>
                         <small>📍 {template_data.get('location_name', '无地点')}</small>
@@ -263,51 +263,58 @@ def activity_templates():
                     """, unsafe_allow_html=True)
                     
                     # 使用模板按钮
-                    if st.button(f"使用模板: {template_name}", key=f"use_{template_name}"):
-                        # 填充表单数据
-                        st.session_state.template_data = template_data
-                        st.success(f"已加载模板: {template_name}")
-                        st.rerun()
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        if st.button(f"使用模板: {template_name}", key=f"use_{template_name}"):
+                            # 填充表单数据
+                            st.session_state.template_data = template_data
+                            st.success(f"已加载模板: {template_name}")
+                            st.rerun()
+                    with col2:
+                        if st.button("删除", key=f"del_{template_name}", type="secondary"):
+                            del st.session_state.activity_templates[template_name]
+                            save_all_data()
+                            st.success(f"模板 '{template_name}' 已删除")
+                            st.rerun()
         else:
             st.info("暂无活动模板，请先创建模板")
     
     with col2:
         # 创建新模板
         st.markdown("**创建新模板**")
-        with st.form("template_form"):
-            template_name = st.text_input("模板名称")
-            template_demand = st.selectbox("需求类型", options=[""] + list(st.session_state.classification_system.keys()))
-            template_project = st.selectbox("企划类型", options=[""] + list(st.session_state.classification_system.get(template_demand, {}).keys()))
-            template_activity = st.selectbox("活动类型", options=[""] + list(st.session_state.classification_system.get(template_demand, {}).get(template_project, {}).keys()))
-            template_behavior = st.selectbox("行为类型", options=[""] + list(st.session_state.classification_system.get(template_demand, {}).get(template_project, {}).get(template_activity, {}).keys()))
-            template_location = st.text_input("常用地点")
-            
-            if st.form_submit_button("保存模板"):
-                if template_name and template_demand and template_project and template_activity and template_behavior:
-                    st.session_state.activity_templates[template_name] = {
-                        "demand": template_demand,
-                        "project": template_project,
-                        "activity": template_activity,
-                        "behavior": template_behavior,
-                        "location_name": template_location
-                    }
-                    save_all_data()
-                    st.success(f"模板 '{template_name}' 已保存")
-                    st.rerun()
-                else:
-                    st.error("请填写完整信息")
+        template_name = st.text_input("模板名称")
+        template_demand = st.selectbox("需求类型", options=[""] + list(st.session_state.classification_system.keys()))
+        template_project = st.selectbox("企划类型", options=[""] + list(st.session_state.classification_system.get(template_demand, {}).keys()))
+        template_activity = st.selectbox("活动类型", options=[""] + list(st.session_state.classification_system.get(template_demand, {}).get(template_project, {}).keys()))
+        template_behavior = st.selectbox("行为类型", options=[""] + list(st.session_state.classification_system.get(template_demand, {}).get(template_project, {}).get(template_activity, {}).keys()))
+        template_location = st.text_input("常用地点")
+        
+        if st.button("保存模板", use_container_width=True):
+            if template_name and template_demand and template_project and template_activity and template_behavior:
+                st.session_state.activity_templates[template_name] = {
+                    "demand": template_demand,
+                    "project": template_project,
+                    "activity": template_activity,
+                    "behavior": template_behavior,
+                    "location_name": template_location
+                }
+                save_all_data()
+                st.success(f"模板 '{template_name}' 已保存")
+                st.rerun()
+            else:
+                st.error("请填写完整信息")
 
-# 智能地图组件
+# 智能地图组件 - 修复：将搜索功能移出表单
 def smart_map_selector():
     """智能地图选择器"""
     st.markdown("**🗺️ 地点选择**")
     
-    # 地点搜索
+    # 地点搜索 - 移出表单
     col1, col2 = st.columns([3, 1])
     with col1:
-        search_query = st.text_input("搜索地点", placeholder="输入地点名称进行搜索...")
+        search_query = st.text_input("搜索地点", placeholder="输入地点名称进行搜索...", key="location_search")
     with col2:
-        search_clicked = st.button("搜索", use_container_width=True)
+        search_clicked = st.button("搜索", use_container_width=True, key="search_button")
     
     searched_location = None
     if search_clicked and search_query:
@@ -319,7 +326,7 @@ def smart_map_selector():
             else:
                 st.error("未找到相关地点")
     
-    # 常用地点快速选择
+    # 常用地点快速选择 - 移出表单
     st.markdown("**📍 常用地点**")
     common_locations = ["家", "办公室", "学校", "健身房", "超市", "餐厅"]
     cols = st.columns(6)
@@ -358,7 +365,7 @@ def smart_map_selector():
     
     return coordinates, searched_location, selected_common_location
 
-# 活动记录表单
+# 活动记录表单 - 修复：将所有按钮移出表单
 def activity_form():
     """活动记录表单"""
     st.markdown('<div class="sub-header">📝 记录新活动</div>', unsafe_allow_html=True)
@@ -366,9 +373,12 @@ def activity_form():
     # 检查是否有模板数据要填充
     prefilled_data = st.session_state.get('template_data', {})
     if prefilled_data:
-        st.info(f"正在使用模板: {prefilled_data.get('template_name', '未知模板')}")
+        st.info(f"正在使用模板: {list(st.session_state.activity_templates.keys())[list(st.session_state.activity_templates.values()).index(prefilled_data)] if prefilled_data in st.session_state.activity_templates.values() else '未知模板'}")
     
-    # 使用st.form的正确方式
+    # 将地图选择器移出表单
+    coordinates, searched_location, common_location = smart_map_selector()
+    
+    # 使用st.form的正确方式 - 只包含表单字段，不包含按钮
     with st.form(key="activity_form"):
         # 时间信息
         col1, col2, col3 = st.columns(3)
@@ -404,18 +414,14 @@ def activity_form():
         with loc_col3:
             # 如果有模板数据，预填充地点
             default_location = prefilled_data.get('location_name', '')
+            # 如果选择了常用地点，更新地点名称
+            if common_location and not default_location:
+                default_location = common_location
+            # 如果搜索到地点，更新地点名称
+            if searched_location and not default_location:
+                default_location = searched_location['name']
+                
             location_name = st.text_input("具体地点名称*", placeholder="如：中关村大厦A座", value=default_location)
-        
-        # 智能地图选择器
-        coordinates, searched_location, common_location = smart_map_selector()
-        
-        # 如果选择了常用地点，更新地点名称
-        if common_location and not location_name:
-            location_name = common_location
-        
-        # 如果搜索到地点，更新地点名称
-        if searched_location and not location_name:
-            location_name = searched_location['name']
         
         # 分类信息
         st.markdown("**🏷️ 活动分类**")
@@ -456,80 +462,81 @@ def activity_form():
                                           height=100)
         
         # 提交按钮 - 使用st.form_submit_button
-        col1, col2, col3 = st.columns([2, 1, 1])
-        with col1:
-            submitted = st.form_submit_button("✅ 添加活动", use_container_width=True)
-        with col2:
-            save_as_template = st.form_submit_button("💾 保存为模板", use_container_width=True)
-        with col3:
-            clear_form = st.form_submit_button("🗑️ 清空表单", use_container_width=True)
+        submitted = st.form_submit_button("✅ 添加活动", use_container_width=True)
+    
+    # 将其他按钮移出表单
+    col1, col2 = st.columns(2)
+    with col1:
+        save_as_template = st.button("💾 保存为模板", use_container_width=True)
+    with col2:
+        clear_form = st.button("🗑️ 清空表单", use_container_width=True)
+    
+    if submitted:
+        # 验证必填字段
+        if not all([start_datetime, end_datetime, duration, location_category, location_name, 
+                   demand_type, project_type, activity_type, behavior_type]):
+            st.error("请填写所有必填字段（标*的字段）")
+            return
         
-        if submitted:
-            # 验证必填字段
-            if not all([start_datetime, end_datetime, duration, location_category, location_name, 
-                       demand_type, project_type, activity_type, behavior_type]):
-                st.error("请填写所有必填字段（标*的字段）")
-                return
-            
-            if duration <= 0:
-                st.error("持续时间必须大于0")
-                return
-            
-            # 创建活动对象
-            activity = {
-                "id": len(st.session_state.activities) + 1,
-                "start_time": start_datetime.isoformat(),
-                "end_time": end_datetime.isoformat(),
-                "duration": duration,
-                "location_category": location_category,
-                "location_tag": location_tag,
-                "location_name": location_name,
-                "coordinates": coordinates,
-                "demand": demand_type,
-                "project": project_type,
-                "activity": activity_type,
-                "behavior": behavior_type,
-                "description": activity_description,
-                "created_at": datetime.datetime.now().isoformat()
-            }
-            
-            # 添加到活动列表
-            st.session_state.activities.append(activity)
-            st.session_state.activities.sort(key=lambda x: x["start_time"])
-            
-            # 保存数据
-            save_all_data()
-            
-            # 清除模板数据
-            if 'template_data' in st.session_state:
-                del st.session_state.template_data
-            
-            st.success("🎉 活动添加成功！")
-            
-            # 重新加载页面
-            st.rerun()
+        if duration <= 0:
+            st.error("持续时间必须大于0")
+            return
         
-        if save_as_template:
-            template_name = f"{demand_type}_{project_type}_{activity_type}"
-            if st.session_state.activity_templates.get(template_name):
-                template_name = f"{template_name}_{len(st.session_state.activity_templates)}"
-            
-            st.session_state.activity_templates[template_name] = {
-                "demand": demand_type,
-                "project": project_type,
-                "activity": activity_type,
-                "behavior": behavior_type,
-                "location_name": location_name
-            }
-            save_all_data()
-            st.success(f"模板 '{template_name}' 已保存")
-            st.rerun()
+        # 创建活动对象
+        activity = {
+            "id": len(st.session_state.activities) + 1,
+            "start_time": start_datetime.isoformat(),
+            "end_time": end_datetime.isoformat(),
+            "duration": duration,
+            "location_category": location_category,
+            "location_tag": location_tag,
+            "location_name": location_name,
+            "coordinates": coordinates,
+            "demand": demand_type,
+            "project": project_type,
+            "activity": activity_type,
+            "behavior": behavior_type,
+            "description": activity_description,
+            "created_at": datetime.datetime.now().isoformat()
+        }
         
-        if clear_form:
-            # 清除模板数据
-            if 'template_data' in st.session_state:
-                del st.session_state.template_data
-            st.rerun()
+        # 添加到活动列表
+        st.session_state.activities.append(activity)
+        st.session_state.activities.sort(key=lambda x: x["start_time"])
+        
+        # 保存数据
+        save_all_data()
+        
+        # 清除模板数据
+        if 'template_data' in st.session_state:
+            del st.session_state.template_data
+        
+        st.success("🎉 活动添加成功！")
+        
+        # 重新加载页面
+        st.rerun()
+    
+    if save_as_template:
+        template_name = f"{demand_type}_{project_type}_{activity_type}"
+        if st.session_state.activity_templates.get(template_name):
+            template_name = f"{template_name}_{len(st.session_state.activity_templates)}"
+        
+        st.session_state.activity_templates[template_name] = {
+            "demand": demand_type,
+            "project": project_type,
+            "activity": activity_type,
+            "behavior": behavior_type,
+            "location_name": location_name
+        }
+        save_all_data()
+        st.success(f"模板 '{template_name}' 已保存")
+        st.rerun()
+    
+    if clear_form:
+        # 清除模板数据
+        if 'template_data' in st.session_state:
+            del st.session_state.template_data
+        st.rerun()
 
 # 数据概览
 def data_overview():
