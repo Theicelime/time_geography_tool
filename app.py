@@ -14,6 +14,8 @@ import time
 import requests
 from geopy.geocoders import Nominatim
 import math
+from collections import Counter, defaultdict
+import numpy as np
 
 # 页面配置
 st.set_page_config(
@@ -241,75 +243,12 @@ def quick_actions():
             save_all_data()
             st.success("数据已备份")
 
-# 活动模板功能
-def activity_templates():
-    """活动模板管理"""
-    st.markdown('<div class="sub-header">📋 活动模板</div>', unsafe_allow_html=True)
-    
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        # 显示现有模板
-        if st.session_state.activity_templates:
-            st.markdown("**已保存的模板:**")
-            for template_name, template_data in st.session_state.activity_templates.items():
-                with st.container():
-                    st.markdown(f"""
-                    <div class="template-card">
-                        <strong>{template_name}</strong><br>
-                        <small>{template_data['demand']} → {template_data['project']} → {template_data['activity']}</small><br>
-                        <small>📍 {template_data.get('location_name', '无地点')}</small>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # 使用模板按钮
-                    col1, col2 = st.columns([3, 1])
-                    with col1:
-                        if st.button(f"使用模板: {template_name}", key=f"use_{template_name}"):
-                            # 填充表单数据
-                            st.session_state.template_data = template_data
-                            st.success(f"已加载模板: {template_name}")
-                            st.rerun()
-                    with col2:
-                        if st.button("删除", key=f"del_{template_name}", type="secondary"):
-                            del st.session_state.activity_templates[template_name]
-                            save_all_data()
-                            st.success(f"模板 '{template_name}' 已删除")
-                            st.rerun()
-        else:
-            st.info("暂无活动模板，请先创建模板")
-    
-    with col2:
-        # 创建新模板
-        st.markdown("**创建新模板**")
-        template_name = st.text_input("模板名称")
-        template_demand = st.selectbox("需求类型", options=[""] + list(st.session_state.classification_system.keys()))
-        template_project = st.selectbox("企划类型", options=[""] + list(st.session_state.classification_system.get(template_demand, {}).keys()))
-        template_activity = st.selectbox("活动类型", options=[""] + list(st.session_state.classification_system.get(template_demand, {}).get(template_project, {}).keys()))
-        template_behavior = st.selectbox("行为类型", options=[""] + list(st.session_state.classification_system.get(template_demand, {}).get(template_project, {}).get(template_activity, {}).keys()))
-        template_location = st.text_input("常用地点")
-        
-        if st.button("保存模板", use_container_width=True):
-            if template_name and template_demand and template_project and template_activity and template_behavior:
-                st.session_state.activity_templates[template_name] = {
-                    "demand": template_demand,
-                    "project": template_project,
-                    "activity": template_activity,
-                    "behavior": template_behavior,
-                    "location_name": template_location
-                }
-                save_all_data()
-                st.success(f"模板 '{template_name}' 已保存")
-                st.rerun()
-            else:
-                st.error("请填写完整信息")
-
-# 智能地图组件 - 修复：将搜索功能移出表单
+# 智能地图组件
 def smart_map_selector():
     """智能地图选择器"""
     st.markdown("**🗺️ 地点选择**")
     
-    # 地点搜索 - 移出表单
+    # 地点搜索
     col1, col2 = st.columns([3, 1])
     with col1:
         search_query = st.text_input("搜索地点", placeholder="输入地点名称进行搜索...", key="location_search")
@@ -326,7 +265,7 @@ def smart_map_selector():
             else:
                 st.error("未找到相关地点")
     
-    # 常用地点快速选择 - 移出表单
+    # 常用地点快速选择
     st.markdown("**📍 常用地点**")
     common_locations = ["家", "办公室", "学校", "健身房", "超市", "餐厅"]
     cols = st.columns(6)
@@ -365,7 +304,7 @@ def smart_map_selector():
     
     return coordinates, searched_location, selected_common_location
 
-# 活动记录表单 - 修复：将所有按钮移出表单
+# 活动记录表单
 def activity_form():
     """活动记录表单"""
     st.markdown('<div class="sub-header">📝 记录新活动</div>', unsafe_allow_html=True)
@@ -373,7 +312,13 @@ def activity_form():
     # 检查是否有模板数据要填充
     prefilled_data = st.session_state.get('template_data', {})
     if prefilled_data:
-        st.info(f"正在使用模板: {list(st.session_state.activity_templates.keys())[list(st.session_state.activity_templates.values()).index(prefilled_data)] if prefilled_data in st.session_state.activity_templates.values() else '未知模板'}")
+        template_name = None
+        for name, data in st.session_state.activity_templates.items():
+            if data == prefilled_data:
+                template_name = name
+                break
+        if template_name:
+            st.info(f"正在使用模板: {template_name}")
     
     # 将地图选择器移出表单
     coordinates, searched_location, common_location = smart_map_selector()
@@ -538,9 +483,9 @@ def activity_form():
             del st.session_state.template_data
         st.rerun()
 
-# 数据概览
+# 增强的数据概览
 def data_overview():
-    """数据概览面板"""
+    """增强的数据概览面板"""
     st.markdown('<div class="sub-header">📊 数据概览</div>', unsafe_allow_html=True)
     
     if not st.session_state.activities:
@@ -582,40 +527,192 @@ def data_overview():
             </div>
             """, unsafe_allow_html=True)
     
-    # 需求类型分布
-    st.markdown("**📈 需求类型分布**")
-    demand_data = {}
-    for activity in st.session_state.activities:
-        demand = activity["demand"]
-        duration = activity["duration"]
-        demand_data[demand] = demand_data.get(demand, 0) + duration
+    # 多维度分析
+    st.markdown("---")
+    st.markdown("### 📈 多维度分析")
     
-    if demand_data:
-        col1, col2 = st.columns(2)
-        with col1:
-            fig = px.pie(
+    # 第一行图表：需求分布和时间趋势
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # 需求类型分布
+        st.markdown("**🎯 需求类型分布**")
+        demand_data = {}
+        for activity in st.session_state.activities:
+            demand = activity["demand"]
+            duration = activity["duration"]
+            demand_data[demand] = demand_data.get(demand, 0) + duration
+        
+        if demand_data:
+            fig_demand = px.pie(
                 values=list(demand_data.values()),
                 names=list(demand_data.keys()),
                 title="各需求类型时间分布"
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig_demand, use_container_width=True)
+    
+    with col2:
+        # 时间趋势分析
+        st.markdown("**📅 活动时间趋势**")
+        date_data = {}
+        for activity in st.session_state.activities:
+            date = datetime.datetime.fromisoformat(activity["start_time"]).date()
+            date_str = date.isoformat()
+            date_data[date_str] = date_data.get(date_str, 0) + 1
         
-        with col2:
-            # 时间分布图
-            time_data = {}
-            for activity in st.session_state.activities:
-                hour = datetime.datetime.fromisoformat(activity["start_time"]).hour
-                time_slot = f"{hour:02d}:00"
-                time_data[time_slot] = time_data.get(time_slot, 0) + activity["duration"]
+        if date_data:
+            dates = sorted(date_data.keys())
+            counts = [date_data[date] for date in dates]
             
-            if time_data:
-                fig2 = px.bar(
-                    x=list(time_data.keys()),
-                    y=list(time_data.values()),
-                    title="时间段活动分布",
-                    labels={"x": "时间段", "y": "总时长(分钟)"}
-                )
-                st.plotly_chart(fig2, use_container_width=True)
+            fig_trend = px.line(
+                x=dates, y=counts,
+                title="每日活动数量趋势",
+                labels={"x": "日期", "y": "活动数量"}
+            )
+            fig_trend.update_traces(line=dict(color="#1f77b4", width=3))
+            st.plotly_chart(fig_trend, use_container_width=True)
+    
+    # 第二行图表：时间段分布和持续时间分析
+    col3, col4 = st.columns(2)
+    
+    with col3:
+        # 时间段分布
+        st.markdown("**⏰ 时间段分布**")
+        time_slots = {
+            "深夜(0-6)": 0, "早晨(6-9)": 0, "上午(9-12)": 0,
+            "中午(12-14)": 0, "下午(14-18)": 0, "晚上(18-24)": 0
+        }
+        
+        for activity in st.session_state.activities:
+            start_time = datetime.datetime.fromisoformat(activity["start_time"])
+            hour = start_time.hour
+            
+            if 0 <= hour < 6:
+                time_slots["深夜(0-6)"] += activity["duration"]
+            elif 6 <= hour < 9:
+                time_slots["早晨(6-9)"] += activity["duration"]
+            elif 9 <= hour < 12:
+                time_slots["上午(9-12)"] += activity["duration"]
+            elif 12 <= hour < 14:
+                time_slots["中午(12-14)"] += activity["duration"]
+            elif 14 <= hour < 18:
+                time_slots["下午(14-18)"] += activity["duration"]
+            else:
+                time_slots["晚上(18-24)"] += activity["duration"]
+        
+        fig_time = px.bar(
+            x=list(time_slots.keys()),
+            y=list(time_slots.values()),
+            title="各时间段活动时长分布",
+            labels={"x": "时间段", "y": "总时长(分钟)"},
+            color=list(time_slots.values()),
+            color_continuous_scale="viridis"
+        )
+        st.plotly_chart(fig_time, use_container_width=True)
+    
+    with col4:
+        # 持续时间分布
+        st.markdown("**⏱️ 活动持续时间分布**")
+        durations = [activity["duration"] for activity in st.session_state.activities]
+        
+        if durations:
+            fig_duration = px.histogram(
+                x=durations,
+                title="活动持续时间分布",
+                labels={"x": "持续时间(分钟)", "y": "活动数量"},
+                nbins=20
+            )
+            fig_duration.update_traces(marker_color="#ff7f0e")
+            st.plotly_chart(fig_duration, use_container_width=True)
+    
+    # 第三行图表：地点分析和分类详情
+    col5, col6 = st.columns(2)
+    
+    with col5:
+        # 地点类型分析
+        st.markdown("**📍 地点类型分析**")
+        location_data = {}
+        for activity in st.session_state.activities:
+            category = activity["location_category"]
+            location_data[category] = location_data.get(category, 0) + activity["duration"]
+        
+        if location_data:
+            fig_location = px.bar(
+                x=list(location_data.keys()),
+                y=list(location_data.values()),
+                title="各地点类型时间分布",
+                labels={"x": "地点类型", "y": "总时长(分钟)"},
+                color=list(location_data.values()),
+                color_continuous_scale="plasma"
+            )
+            st.plotly_chart(fig_location, use_container_width=True)
+    
+    with col6:
+        # 活动类型详情
+        st.markdown("**🔍 活动类型详情**")
+        activity_data = {}
+        for activity in st.session_state.activities:
+            key = f"{activity['demand']} - {activity['activity']}"
+            activity_data[key] = activity_data.get(key, 0) + 1
+        
+        if activity_data:
+            # 取前10个最多的活动类型
+            sorted_activities = sorted(activity_data.items(), key=lambda x: x[1], reverse=True)[:10]
+            activity_names = [item[0] for item in sorted_activities]
+            activity_counts = [item[1] for item in sorted_activities]
+            
+            fig_activity = px.bar(
+                x=activity_counts,
+                y=activity_names,
+                orientation='h',
+                title="最频繁的活动类型",
+                labels={"x": "出现次数", "y": "活动类型"}
+            )
+            st.plotly_chart(fig_activity, use_container_width=True)
+    
+    # 高级统计信息
+    st.markdown("---")
+    st.markdown("### 📋 高级统计")
+    
+    col7, col8, col9 = st.columns(3)
+    
+    with col7:
+        st.markdown("**📅 时间统计**")
+        if st.session_state.activities:
+            first_date = min(datetime.datetime.fromisoformat(a["start_time"]).date() 
+                           for a in st.session_state.activities)
+            last_date = max(datetime.datetime.fromisoformat(a["start_time"]).date() 
+                          for a in st.session_state.activities)
+            days_span = (last_date - first_date).days + 1
+            
+            st.metric("记录时间跨度", f"{days_span} 天")
+            st.metric("日均活动数", f"{total_activities/days_span:.1f} 个")
+            st.metric("日均时长", f"{total_hours/days_span:.1f} 小时")
+    
+    with col8:
+        st.markdown("**🎯 分类统计**")
+        demand_count = len(set(a["demand"] for a in st.session_state.activities))
+        project_count = len(set(a["project"] for a in st.session_state.activities))
+        activity_count = len(set(a["activity"] for a in st.session_state.activities))
+        behavior_count = len(set(a["behavior"] for a in st.session_state.activities))
+        
+        st.metric("需求类型", demand_count)
+        st.metric("企划类型", project_count)
+        st.metric("活动类型", activity_count)
+        st.metric("行为类型", behavior_count)
+    
+    with col9:
+        st.markdown("**📈 效率指标**")
+        # 计算活动密度（白天活动时间占比）
+        daytime_activities = [a for a in st.session_state.activities 
+                            if 6 <= datetime.datetime.fromisoformat(a["start_time"]).hour <= 22]
+        daytime_duration = sum(a["duration"] for a in daytime_activities)
+        daytime_ratio = (daytime_duration / total_duration * 100) if total_duration > 0 else 0
+        
+        # 计算连续活动指标
+        st.metric("白天活动占比", f"{daytime_ratio:.1f}%")
+        st.metric("活动多样性", f"{activity_count} 种")
+        st.metric("地点多样性", f"{unique_locations} 处")
 
 # 活动记录列表
 def activity_records():
@@ -690,35 +787,39 @@ def activity_records():
                     st.success("活动已删除")
                     st.rerun()
 
-# 时空轨迹分析
+# 增强的时空轨迹分析
 def spatiotemporal_analysis():
-    """时空轨迹分析"""
+    """增强的时空轨迹分析"""
     st.markdown('<div class="sub-header">🗺️ 时空轨迹分析</div>', unsafe_allow_html=True)
     
     if not st.session_state.activities:
         st.info("暂无活动数据")
         return
     
-    # 选择日期查看轨迹
-    dates = sorted(set(datetime.datetime.fromisoformat(a["start_time"]).date() 
-                      for a in st.session_state.activities))
-    
-    if not dates:
-        st.info("暂无活动数据")
-        return
-        
-    col1, col2 = st.columns(2)
+    # 分析选项
+    col1, col2, col3 = st.columns(3)
     with col1:
+        # 选择日期查看轨迹
+        dates = sorted(set(datetime.datetime.fromisoformat(a["start_time"]).date() 
+                          for a in st.session_state.activities))
         selected_date = st.selectbox("选择查看日期", options=dates)
+    
     with col2:
         # 多日轨迹选项
         multi_day = st.checkbox("显示多日轨迹")
+        if multi_day:
+            day_range = st.slider("天数范围", min_value=2, max_value=7, value=3)
+    
+    with col3:
+        # 可视化类型
+        viz_type = st.selectbox("可视化类型", 
+                               ["轨迹地图", "热力图", "时间轴", "分类视图"])
     
     # 筛选活动
     if multi_day:
-        # 显示最近7天的轨迹
-        end_date = max(dates)
-        start_date = end_date - timedelta(days=7)
+        # 显示多日轨迹
+        end_date = selected_date
+        start_date = end_date - timedelta(days=day_range-1)
         date_range_activities = [a for a in st.session_state.activities 
                                if start_date <= datetime.datetime.fromisoformat(a["start_time"]).date() <= end_date]
         daily_activities = date_range_activities
@@ -733,45 +834,79 @@ def spatiotemporal_analysis():
         st.info(f"{display_date} 没有活动记录")
         return
     
-    # 创建轨迹地图
+    # 根据可视化类型显示不同的图表
+    if viz_type == "轨迹地图":
+        show_trajectory_map(daily_activities, display_date)
+    elif viz_type == "热力图":
+        show_heatmap(daily_activities, display_date)
+    elif viz_type == "时间轴":
+        show_timeline_view(daily_activities, display_date)
+    elif viz_type == "分类视图":
+        show_category_view(daily_activities, display_date)
+    
+    # 显示详细时间线
+    show_detailed_timeline(daily_activities)
+
+def show_trajectory_map(activities, display_date):
+    """显示轨迹地图"""
     st.markdown(f"**🛣️ {display_date} 的活动轨迹**")
     
     # 计算地图中心
-    valid_activities = [a for a in daily_activities if a.get("coordinates")]
+    valid_activities = [a for a in activities if a.get("coordinates")]
     
     if not valid_activities:
         st.warning("所选时间段的活动没有坐标信息，无法显示轨迹")
         return
     
+    # 创建Folium地图
+    m = create_enhanced_map(valid_activities, display_date)
+    
+    # 显示地图
+    st_folium(m, width=800, height=500)
+
+def create_enhanced_map(activities, display_date):
+    """创建增强的地图"""
     # 计算中心点
-    lats = [a["coordinates"]["lat"] for a in valid_activities]
-    lngs = [a["coordinates"]["lng"] for a in valid_activities]
+    lats = [a["coordinates"]["lat"] for a in activities]
+    lngs = [a["coordinates"]["lng"] for a in activities]
     center_lat = sum(lats) / len(lats)
     center_lng = sum(lngs) / len(lngs)
     
     # 创建地图
     m = folium.Map(location=[center_lat, center_lng], zoom_start=13)
     
-    # 添加轨迹线
+    # 颜色映射
+    demand_colors = {
+        "个人": "blue",
+        "家庭": "green", 
+        "工作": "red",
+        "移动": "orange"
+    }
+    
+    # 添加轨迹线和标记点
     coordinates = []
-    for i, activity in enumerate(valid_activities):
+    for i, activity in enumerate(activities):
         coords = (activity["coordinates"]["lat"], activity["coordinates"]["lng"])
         coordinates.append(coords)
+        
+        # 获取颜色
+        color = demand_colors.get(activity["demand"], "purple")
         
         # 添加标记点
         start_time = datetime.datetime.fromisoformat(activity["start_time"])
         popup_text = f"""
         <b>{activity['demand']} - {activity['project']}</b><br>
-        {activity['location_name']}<br>
-        {start_time.strftime('%H:%M')} - {activity['duration']}分钟<br>
-        {activity['description'] or '无描述'}
+        <b>活动:</b> {activity['activity']} - {activity['behavior']}<br>
+        <b>地点:</b> {activity['location_name']}<br>
+        <b>时间:</b> {start_time.strftime('%H:%M')} - {activity['duration']}分钟<br>
+        <b>描述:</b> {activity['description'] or '无描述'}
         """
         
         folium.Marker(
             coords,
             popup=folium.Popup(popup_text, max_width=300),
             tooltip=f"{i+1}. {activity['demand']} - {activity['project']}",
-            icon=folium.Icon(color='blue', icon='info-sign')
+            icon=folium.Icon(color=color, icon='info-sign')
         ).add_to(m)
     
     # 添加轨迹线
@@ -779,17 +914,135 @@ def spatiotemporal_analysis():
         folium.PolyLine(
             coordinates,
             color='red',
-            weight=3,
+            weight=4,
             opacity=0.8,
             popup=f"{display_date} 活动轨迹"
         ).add_to(m)
     
-    # 显示地图
-    st_folium(m, width=800, height=500)
+    # 添加起点和终点标记
+    if coordinates:
+        folium.Marker(
+            coordinates[0],
+            popup="起点",
+            icon=folium.Icon(color='green', icon='play', prefix='fa')
+        ).add_to(m)
+        
+        folium.Marker(
+            coordinates[-1],
+            popup="终点", 
+            icon=folium.Icon(color='red', icon='stop', prefix='fa')
+        ).add_to(m)
     
-    # 显示时间线
-    st.markdown("**⏰ 时间线**")
-    for i, activity in enumerate(daily_activities):
+    return m
+
+def show_heatmap(activities, display_date):
+    """显示热力图"""
+    st.markdown(f"**🔥 {display_date} 活动热力图**")
+    
+    valid_activities = [a for a in activities if a.get("coordinates")]
+    
+    if not valid_activities:
+        st.warning("没有坐标信息，无法显示热力图")
+        return
+    
+    # 创建热力图数据
+    heat_data = []
+    for activity in valid_activities:
+        coords = activity["coordinates"]
+        # 根据活动时长调整权重
+        weight = min(activity["duration"] / 60, 1.0)  # 标准化到0-1
+        heat_data.append([coords["lat"], coords["lng"], weight])
+    
+    # 使用Plotly创建热力图
+    lats = [point[0] for point in heat_data]
+    lngs = [point[1] for point in heat_data]
+    weights = [point[2] for point in heat_data]
+    
+    fig = px.density_mapbox(
+        lat=lats, lon=lngs, z=weights,
+        radius=20, zoom=12,
+        mapbox_style="open-street-map",
+        title=f"{display_date} 活动密度热力图"
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+
+def show_timeline_view(activities, display_date):
+    """显示时间轴视图"""
+    st.markdown(f"**⏰ {display_date} 时间轴视图**")
+    
+    # 创建时间轴数据
+    timeline_data = []
+    for activity in activities:
+        start_time = datetime.datetime.fromisoformat(activity["start_time"])
+        end_time = datetime.datetime.fromisoformat(activity["end_time"])
+        
+        timeline_data.append({
+            "活动": f"{activity['demand']} - {activity['activity']}",
+            "开始时间": start_time,
+            "结束时间": end_time,
+            "时长": activity["duration"],
+            "地点": activity["location_name"],
+            "类型": activity["demand"]
+        })
+    
+    df = pd.DataFrame(timeline_data)
+    
+    # 创建甘特图样式的时间轴
+    fig = px.timeline(
+        df, 
+        x_start="开始时间", 
+        x_end="结束时间", 
+        y="活动",
+        color="类型",
+        title=f"{display_date} 活动时间轴"
+    )
+    
+    fig.update_yaxes(autorange="reversed")
+    st.plotly_chart(fig, use_container_width=True)
+
+def show_category_view(activities, display_date):
+    """显示分类视图"""
+    st.markdown(f"**🏷️ {display_date} 分类视图**")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # 需求类型分布
+        demand_data = {}
+        for activity in activities:
+            demand = activity["demand"]
+            demand_data[demand] = demand_data.get(demand, 0) + activity["duration"]
+        
+        if demand_data:
+            fig = px.pie(
+                values=list(demand_data.values()),
+                names=list(demand_data.keys()),
+                title="需求类型时间分布"
+            )
+            st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        # 地点类型分布
+        location_data = {}
+        for activity in activities:
+            category = activity["location_category"]
+            location_data[category] = location_data.get(category, 0) + 1
+        
+        if location_data:
+            fig = px.bar(
+                x=list(location_data.keys()),
+                y=list(location_data.values()),
+                title="地点类型分布",
+                labels={"x": "地点类型", "y": "活动数量"}
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+def show_detailed_timeline(activities):
+    """显示详细时间线"""
+    st.markdown("**📋 详细时间线**")
+    
+    for i, activity in enumerate(activities):
         start_time = datetime.datetime.fromisoformat(activity["start_time"])
         end_time = datetime.datetime.fromisoformat(activity["end_time"])
         
@@ -797,14 +1050,423 @@ def spatiotemporal_analysis():
             col1, col2 = st.columns(2)
             with col1:
                 st.write(f"**地点:** {activity['location_name']}")
+                st.write(f"**分类:** {activity['location_category']} / {activity['location_tag'] or '未分类'}")
                 if activity.get('coordinates'):
                     st.write(f"**坐标:** {activity['coordinates']['lat']:.4f}, {activity['coordinates']['lng']:.4f}")
             with col2:
                 st.write(f"**时长:** {activity['duration']}分钟")
                 st.write(f"**行为:** {activity['behavior']}")
+                st.write(f"**结束时间:** {end_time.strftime('%H:%M')}")
             
             if activity['description']:
                 st.write(f"**描述:** {activity['description']}")
+
+# 智能化的活动模板系统
+def activity_templates():
+    """智能化的活动模板管理"""
+    st.markdown('<div class="sub-header">📋 智能活动模板</div>', unsafe_allow_html=True)
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        # 智能推荐模板
+        st.markdown("**🤖 智能推荐**")
+        recommended_templates = get_recommended_templates()
+        
+        if recommended_templates:
+            for template in recommended_templates:
+                with st.container():
+                    st.markdown(f"""
+                    <div class="template-card">
+                        <strong>🎯 {template['name']}</strong><br>
+                        <small>📊 匹配度: {template['score']:.1f}%</small><br>
+                        <small>{template['data']['demand']} → {template['data']['project']} → {template['data']['activity']}</small><br>
+                        <small>📍 {template['data'].get('location_name', '无地点')}</small>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    col_btn1, col_btn2 = st.columns([3, 1])
+                    with col_btn1:
+                        if st.button(f"使用推荐: {template['name']}", key=f"rec_use_{template['name']}"):
+                            st.session_state.template_data = template['data']
+                            st.success(f"已加载推荐模板: {template['name']}")
+                            st.rerun()
+                    with col_btn2:
+                        if st.button("忽略", key=f"rec_ignore_{template['name']}"):
+                            # 标记为已忽略
+                            if 'ignored_templates' not in st.session_state:
+                                st.session_state.ignored_templates = []
+                            st.session_state.ignored_templates.append(template['name'])
+                            st.rerun()
+        else:
+            st.info("暂无推荐模板，继续记录活动以获得个性化推荐")
+        
+        st.markdown("---")
+        
+        # 现有模板管理
+        st.markdown("**💾 已保存的模板**")
+        if st.session_state.activity_templates:
+            for template_name, template_data in st.session_state.activity_templates.items():
+                with st.container():
+                    usage_count = get_template_usage_count(template_name)
+                    st.markdown(f"""
+                    <div class="template-card">
+                        <strong>{template_name}</strong>
+                        <small style="float: right; color: #666;">使用次数: {usage_count}</small><br>
+                        <small>{template_data['demand']} → {template_data['project']} → {template_data['activity']}</small><br>
+                        <small>📍 {template_data.get('location_name', '无地点')}</small>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    col_btn1, col_btn2, col_btn3 = st.columns([2, 1, 1])
+                    with col_btn1:
+                        if st.button(f"使用模板", key=f"use_{template_name}"):
+                            st.session_state.template_data = template_data
+                            st.success(f"已加载模板: {template_name}")
+                            st.rerun()
+                    with col_btn2:
+                        if st.button("编辑", key=f"edit_{template_name}"):
+                            st.session_state.editing_template = template_name
+                            st.rerun()
+                    with col_btn3:
+                        if st.button("删除", key=f"del_{template_name}", type="secondary"):
+                            del st.session_state.activity_templates[template_name]
+                            save_all_data()
+                            st.success(f"模板 '{template_name}' 已删除")
+                            st.rerun()
+        else:
+            st.info("暂无活动模板，请先创建模板")
+    
+    with col2:
+        # 创建/编辑模板
+        st.markdown("**✏️ 模板编辑**")
+        
+        # 检查是否在编辑模式
+        editing_template = st.session_state.get('editing_template')
+        if editing_template:
+            st.info(f"正在编辑模板: {editing_template}")
+            template_data = st.session_state.activity_templates[editing_template]
+            is_edit_mode = True
+        else:
+            template_data = {}
+            is_edit_mode = False
+        
+        with st.form("template_form"):
+            template_name = st.text_input("模板名称", 
+                                        value=editing_template if editing_template else "")
+            
+            # 智能建议名称
+            if not template_name and not is_edit_mode:
+                suggested_name = generate_template_name()
+                if suggested_name:
+                    st.caption(f"💡 建议名称: {suggested_name}")
+            
+            template_demand = st.selectbox("需求类型", 
+                                         options=[""] + list(st.session_state.classification_system.keys()),
+                                         index=(list(st.session_state.classification_system.keys()).index(template_data.get('demand', '')) + 1 
+                                               if template_data.get('demand') in st.session_state.classification_system else 0))
+            
+            template_project = st.selectbox("企划类型", 
+                                          options=[""] + list(st.session_state.classification_system.get(template_demand, {}).keys()),
+                                          index=(list(st.session_state.classification_system.get(template_demand, {}).keys()).index(template_data.get('project', '')) + 1 
+                                               if template_data.get('project') in st.session_state.classification_system.get(template_demand, {}) else 0))
+            
+            template_activity = st.selectbox("活动类型", 
+                                           options=[""] + list(st.session_state.classification_system.get(template_demand, {}).get(template_project, {}).keys()),
+                                           index=(list(st.session_state.classification_system.get(template_demand, {}).get(template_project, {}).keys()).index(template_data.get('activity', '')) + 1 
+                                                if template_data.get('activity') in st.session_state.classification_system.get(template_demand, {}).get(template_project, {}) else 0))
+            
+            template_behavior = st.selectbox("行为类型", 
+                                           options=[""] + list(st.session_state.classification_system.get(template_demand, {}).get(template_project, {}).get(template_activity, {}).keys()),
+                                           index=(list(st.session_state.classification_system.get(template_demand, {}).get(template_project, {}).get(template_activity, {}).keys()).index(template_data.get('behavior', '')) + 1 
+                                                if template_data.get('behavior') in st.session_state.classification_system.get(template_demand, {}).get(template_project, {}).get(template_activity, {}) else 0))
+            
+            template_location = st.text_input("常用地点", value=template_data.get('location_name', ''))
+            
+            # 自动填充建议地点
+            if not template_location and not is_edit_mode:
+                suggested_location = get_suggested_location(template_demand, template_activity)
+                if suggested_location:
+                    st.caption(f"💡 建议地点: {suggested_location}")
+            
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                submit_label = "更新模板" if is_edit_mode else "保存模板"
+                submitted = st.form_submit_button(submit_label, use_container_width=True)
+            with col_btn2:
+                if is_edit_mode:
+                    if st.form_submit_button("取消编辑", type="secondary", use_container_width=True):
+                        del st.session_state.editing_template
+                        st.rerun()
+            
+            if submitted:
+                if template_name and template_demand and template_project and template_activity and template_behavior:
+                    st.session_state.activity_templates[template_name] = {
+                        "demand": template_demand,
+                        "project": template_project,
+                        "activity": template_activity,
+                        "behavior": template_behavior,
+                        "location_name": template_location
+                    }
+                    save_all_data()
+                    
+                    if is_edit_mode:
+                        if template_name != editing_template:
+                            # 名称已更改，删除旧模板
+                            del st.session_state.activity_templates[editing_template]
+                        del st.session_state.editing_template
+                        st.success(f"模板 '{template_name}' 已更新")
+                    else:
+                        st.success(f"模板 '{template_name}' 已保存")
+                    
+                    st.rerun()
+                else:
+                    st.error("请填写完整信息")
+
+def get_recommended_templates():
+    """获取智能推荐的模板"""
+    recommendations = []
+    
+    if not st.session_state.activities:
+        return recommendations
+    
+    # 分析当前时间和活动模式
+    current_time = datetime.datetime.now()
+    current_hour = current_time.hour
+    current_weekday = current_time.weekday()
+    
+    # 忽略的模板
+    ignored = st.session_state.get('ignored_templates', [])
+    
+    # 基于时间推荐
+    time_based_templates = recommend_by_time(current_hour, current_weekday, ignored)
+    recommendations.extend(time_based_templates)
+    
+    # 基于历史模式推荐
+    pattern_based_templates = recommend_by_pattern(ignored)
+    recommendations.extend(pattern_based_templates)
+    
+    # 基于地点推荐
+    location_based_templates = recommend_by_location(ignored)
+    recommendations.extend(location_based_templates)
+    
+    # 去重并排序
+    seen = set()
+    unique_recommendations = []
+    for rec in recommendations:
+        if rec['name'] not in seen and rec['name'] not in ignored:
+            seen.add(rec['name'])
+            unique_recommendations.append(rec)
+    
+    return sorted(unique_recommendations, key=lambda x: x['score'], reverse=True)[:3]
+
+def recommend_by_time(current_hour, current_weekday, ignored):
+    """基于时间推荐模板"""
+    recommendations = []
+    
+    # 时间段的典型活动
+    time_patterns = {
+        (6, 9): "早晨活动",    # 早晨
+        (9, 12): "上午学习",   # 上午
+        (12, 14): "午间休息",  # 中午
+        (14, 18): "下午工作",  # 下午
+        (18, 22): "晚间活动",  # 晚上
+        (22, 6): "夜间休息"    # 深夜
+    }
+    
+    # 找到当前时间段
+    current_period = None
+    for (start, end), period_name in time_patterns.items():
+        if start < end:
+            if start <= current_hour < end:
+                current_period = period_name
+                break
+        else:  # 跨天的情况
+            if current_hour >= start or current_hour < end:
+                current_period = period_name
+                break
+    
+    if current_period:
+        # 基于历史数据推荐该时间段的常见活动
+        period_activities = []
+        for activity in st.session_state.activities:
+            activity_hour = datetime.datetime.fromisoformat(activity["start_time"]).hour
+            if (current_period == "早晨活动" and 6 <= activity_hour < 9) or \
+               (current_period == "上午学习" and 9 <= activity_hour < 12) or \
+               (current_period == "午间休息" and 12 <= activity_hour < 14) or \
+               (current_period == "下午工作" and 14 <= activity_hour < 18) or \
+               (current_period == "晚间活动" and 18 <= activity_hour < 22) or \
+               (current_period == "夜间休息" and (activity_hour >= 22 or activity_hour < 6)):
+                period_activities.append(activity)
+        
+        if period_activities:
+            # 统计最常见的活动组合
+            activity_combinations = Counter()
+            for activity in period_activities:
+                key = (activity["demand"], activity["project"], activity["activity"], activity["behavior"])
+                activity_combinations[key] += 1
+            
+            for (demand, project, activity, behavior), count in activity_combinations.most_common(2):
+                template_name = f"{current_period}_{demand}_{activity}"
+                if template_name not in ignored:
+                    score = min(count / len(period_activities) * 100, 95)
+                    recommendations.append({
+                        "name": template_name,
+                        "score": score,
+                        "data": {
+                            "demand": demand,
+                            "project": project,
+                            "activity": activity,
+                            "behavior": behavior,
+                            "location_name": get_common_location(demand, activity)
+                        }
+                    })
+    
+    return recommendations
+
+def recommend_by_pattern(ignored):
+    """基于历史模式推荐模板"""
+    recommendations = []
+    
+    # 分析最近的活动模式
+    recent_activities = st.session_state.activities[-10:]  # 最近10个活动
+    
+    if len(recent_activities) >= 3:
+        # 寻找频繁出现的活动序列
+        sequence_count = defaultdict(int)
+        
+        for i in range(len(recent_activities) - 1):
+            current = recent_activities[i]
+            next_act = recent_activities[i + 1]
+            
+            sequence = (current["demand"], current["activity"], next_act["demand"], next_act["activity"])
+            sequence_count[sequence] += 1
+        
+        # 推荐频繁序列的下一个活动
+        for sequence, count in sequence_count.items():
+            if count >= 2:  # 至少出现2次
+                current_demand, current_activity, next_demand, next_activity = sequence
+                template_name = f"序列推荐_{next_demand}_{next_activity}"
+                
+                if template_name not in ignored:
+                    # 找到对应的项目和行为
+                    next_activity_data = None
+                    for activity in st.session_state.activities:
+                        if activity["demand"] == next_demand and activity["activity"] == next_activity:
+                            next_activity_data = activity
+                            break
+                    
+                    if next_activity_data:
+                        score = min(count / (len(recent_activities) - 1) * 100, 90)
+                        recommendations.append({
+                            "name": template_name,
+                            "score": score,
+                            "data": {
+                                "demand": next_demand,
+                                "project": next_activity_data["project"],
+                                "activity": next_activity,
+                                "behavior": next_activity_data["behavior"],
+                                "location_name": next_activity_data.get("location_name", "")
+                            }
+                        })
+    
+    return recommendations
+
+def recommend_by_location(ignored):
+    """基于地点推荐模板"""
+    recommendations = []
+    
+    # 获取最近使用的地点
+    recent_locations = []
+    for activity in reversed(st.session_state.activities):
+        if activity.get("location_name") and activity["location_name"] not in recent_locations:
+            recent_locations.append(activity["location_name"])
+            if len(recent_locations) >= 3:
+                break
+    
+    # 为每个地点推荐常见活动
+    for location in recent_locations:
+        location_activities = [a for a in st.session_state.activities if a.get("location_name") == location]
+        
+        if location_activities:
+            activity_count = Counter()
+            for activity in location_activities:
+                key = (activity["demand"], activity["project"], activity["activity"], activity["behavior"])
+                activity_count[key] += 1
+            
+            for (demand, project, activity, behavior), count in activity_count.most_common(1):
+                template_name = f"地点_{location}_{activity}"
+                if template_name not in ignored:
+                    score = min(count / len(location_activities) * 100, 85)
+                    recommendations.append({
+                        "name": template_name,
+                        "score": score,
+                        "data": {
+                            "demand": demand,
+                            "project": project,
+                            "activity": activity,
+                            "behavior": behavior,
+                            "location_name": location
+                        }
+                    })
+    
+    return recommendations
+
+def get_template_usage_count(template_name):
+    """获取模板使用次数"""
+    count = 0
+    template_data = st.session_state.activity_templates[template_name]
+    
+    for activity in st.session_state.activities:
+        if (activity["demand"] == template_data["demand"] and
+            activity["project"] == template_data["project"] and
+            activity["activity"] == template_data["activity"] and
+            activity["behavior"] == template_data["behavior"]):
+            count += 1
+    
+    return count
+
+def generate_template_name():
+    """生成智能模板名称"""
+    if not st.session_state.activities:
+        return None
+    
+    # 基于最近活动生成名称
+    recent_activity = st.session_state.activities[-1]
+    return f"{recent_activity['demand']}_{recent_activity['activity']}_模板"
+
+def get_suggested_location(demand, activity):
+    """获取建议地点"""
+    if not st.session_state.activities:
+        return None
+    
+    # 查找相同需求和行为的最常用地点
+    location_count = {}
+    for act in st.session_state.activities:
+        if act["demand"] == demand and act["activity"] == activity:
+            location = act.get("location_name")
+            if location:
+                location_count[location] = location_count.get(location, 0) + 1
+    
+    if location_count:
+        return max(location_count.items(), key=lambda x: x[1])[0]
+    
+    return None
+
+def get_common_location(demand, activity):
+    """获取常用地点"""
+    locations = []
+    for act in st.session_state.activities:
+        if act["demand"] == demand and act["activity"] == activity:
+            location = act.get("location_name")
+            if location:
+                locations.append(location)
+    
+    if locations:
+        location_counter = Counter(locations)
+        return location_counter.most_common(1)[0][0]
+    
+    return ""
 
 # 分类系统管理
 def classification_management():
@@ -911,7 +1573,6 @@ def classification_management():
                 st.rerun()
 
 # 数据管理
-# 在 app.py 的数据管理部分添加示例数据导入功能
 def data_management():
     """数据管理功能"""
     st.markdown('<div class="sub-header">💾 数据管理</div>', unsafe_allow_html=True)
@@ -938,12 +1599,6 @@ def data_management():
                 mime="application/json",
                 use_container_width=True
             )
-        
-        st.markdown("---")
-        st.markdown("**🎓 示例数据**")
-        if st.button("生成同济学生示例数据", use_container_width=True):
-            # 这里可以调用生成示例数据的函数
-            st.info("请在代码中实现示例数据生成功能")
     
     with col2:
         st.markdown("**📥 导入数据**")
