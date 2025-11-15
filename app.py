@@ -270,17 +270,25 @@ def activity_form():
     """活动记录表单"""
     st.markdown('<div class="sub-header">📝 记录新活动</div>', unsafe_allow_html=True)
     
-    with st.form("activity_form", clear_on_submit=False):
+    # 使用st.form的正确方式
+    with st.form(key="activity_form"):
         # 时间信息
         col1, col2, col3 = st.columns(3)
         with col1:
-            start_time = st.datetime_input("开始时间*", value=datetime.datetime.now())
+            # 修复datetime_input问题
+            start_date = st.date_input("开始日期*", value=datetime.date.today())
+            start_time = st.time_input("开始时间*", value=datetime.time(9, 0))
+            start_datetime = datetime.datetime.combine(start_date, start_time)
+            
         with col2:
-            end_time = st.datetime_input("结束时间*", value=datetime.datetime.now())
+            end_date = st.date_input("结束日期*", value=datetime.date.today())
+            end_time = st.time_input("结束时间*", value=datetime.time(10, 0))
+            end_datetime = datetime.datetime.combine(end_date, end_time)
+            
         with col3:
             # 自动计算持续时间
-            if start_time and end_time:
-                duration_minutes = max(1, int((end_time - start_time).total_seconds() / 60))
+            if start_datetime and end_datetime:
+                duration_minutes = max(1, int((end_datetime - start_datetime).total_seconds() / 60))
             else:
                 duration_minutes = 60
                 
@@ -351,12 +359,12 @@ def activity_form():
                                           placeholder="详细描述活动内容和情境...",
                                           height=100)
         
-        # 提交按钮
+        # 提交按钮 - 使用st.form_submit_button
         submitted = st.form_submit_button("✅ 添加活动", use_container_width=True)
         
         if submitted:
             # 验证必填字段
-            if not all([start_time, end_time, duration, location_category, location_name, 
+            if not all([start_datetime, end_datetime, duration, location_category, location_name, 
                        demand_type, project_type, activity_type, behavior_type]):
                 st.error("请填写所有必填字段（标*的字段）")
                 return
@@ -368,8 +376,8 @@ def activity_form():
             # 创建活动对象
             activity = {
                 "id": len(st.session_state.activities) + 1,
-                "start_time": start_time.isoformat(),
-                "end_time": end_time.isoformat(),
+                "start_time": start_datetime.isoformat(),
+                "end_time": end_datetime.isoformat(),
                 "duration": duration,
                 "location_category": location_category,
                 "location_tag": location_tag,
@@ -392,7 +400,7 @@ def activity_form():
             
             st.success("🎉 活动添加成功！")
             
-            # 自动滚动到顶部
+            # 重新加载页面
             st.rerun()
 
 # 数据概览
@@ -518,6 +526,11 @@ def spatiotemporal_analysis():
     # 选择日期查看轨迹
     dates = sorted(set(datetime.datetime.fromisoformat(a["start_time"]).date() 
                       for a in st.session_state.activities))
+    
+    if not dates:
+        st.info("暂无活动数据")
+        return
+        
     selected_date = st.selectbox("选择查看日期", options=dates)
     
     # 筛选当天的活动
@@ -566,7 +579,7 @@ def spatiotemporal_analysis():
             coords,
             popup=folium.Popup(popup_text, max_width=300),
             tooltip=f"{i+1}. {activity['demand']} - {activity['project']}",
-            icon=folium.Icon(color='blue', icon='info-sign', prefix='fa')
+            icon=folium.Icon(color='blue', icon='info-sign')
         ).add_to(m)
     
     # 添加轨迹线
@@ -671,11 +684,11 @@ def main():
     st.markdown('<div class="main-header">🛤️ 个人活动轨迹日志</div>', unsafe_allow_html=True)
     st.markdown('基于时间地理学理论的个人活动记录与分析系统')
     
-    # 侧边栏导航 - 修复图标问题
+    # 侧边栏导航
     with st.sidebar:
         st.title("导航菜单")
         
-        # 使用简单的导航方式，避免图标问题
+        # 使用简单的导航方式
         page_options = {
             "📝 记录活动": "记录活动",
             "📊 数据概览": "数据概览", 
@@ -704,7 +717,7 @@ def main():
         st.write(f"📊 活动记录: {len(st.session_state.activities)} 条")
         st.write(f"🏷️ 分类数量: {len(st.session_state.classification_system)} 个需求类型")
         
-        # 自动保存状态
+        # 手动保存按钮
         if st.button("💾 手动保存数据", use_container_width=True):
             save_all_data()
             st.success("数据已保存")
