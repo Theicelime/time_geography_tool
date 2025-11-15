@@ -279,9 +279,13 @@ def activity_form():
             end_time = st.datetime_input("结束时间*", value=datetime.datetime.now())
         with col3:
             # 自动计算持续时间
-            duration_minutes = int((end_time - start_time).total_seconds() / 60)
+            if start_time and end_time:
+                duration_minutes = max(1, int((end_time - start_time).total_seconds() / 60))
+            else:
+                duration_minutes = 60
+                
             duration = st.number_input("持续时间(分钟)*", min_value=1, max_value=1440, 
-                                     value=max(1, duration_minutes))
+                                     value=duration_minutes)
         
         # 地点信息
         st.markdown("**📍 地点信息**")
@@ -667,14 +671,22 @@ def main():
     st.markdown('<div class="main-header">🛤️ 个人活动轨迹日志</div>', unsafe_allow_html=True)
     st.markdown('基于时间地理学理论的个人活动记录与分析系统')
     
-    # 侧边栏导航
+    # 侧边栏导航 - 修复图标问题
     with st.sidebar:
         st.title("导航菜单")
-        page = st.radio(
-            "选择功能",
-            ["记录活动", "数据概览", "活动记录", "时空轨迹", "分类管理", "数据管理"],
-            icons=["📝", "📊", "📋", "🗺️", "🏷️", "💾"]
-        )
+        
+        # 使用简单的导航方式，避免图标问题
+        page_options = {
+            "📝 记录活动": "记录活动",
+            "📊 数据概览": "数据概览", 
+            "📋 活动记录": "活动记录",
+            "🗺️ 时空轨迹": "时空轨迹",
+            "🏷️ 分类管理": "分类管理",
+            "💾 数据管理": "数据管理"
+        }
+        
+        selected_page = st.selectbox("选择功能", options=list(page_options.keys()))
+        page = page_options[selected_page]
         
         st.markdown("---")
         st.markdown("### 使用说明")
