@@ -390,12 +390,20 @@ def activity_form():
         with col1:
             # 使用session_state来保持时间状态
             start_date = st.date_input("开始日期*", value=st.session_state.start_datetime.date())
-            start_time = st.time_input("开始时间*", value=st.session_state.start_datetime.time())
+            # 精确到分钟的时间输入
+            start_time = st.time_input("开始时间*", 
+                                     value=st.session_state.start_datetime.time(),
+                                     step=60)  # 步长为1分钟
+            
             new_start_datetime = datetime.datetime.combine(start_date, start_time)
             
         with col2:
             end_date = st.date_input("结束日期*", value=st.session_state.end_datetime.date())
-            end_time = st.time_input("结束时间*", value=st.session_state.end_datetime.time())
+            # 精确到分钟的时间输入
+            end_time = st.time_input("结束时间*", 
+                                   value=st.session_state.end_datetime.time(),
+                                   step=60)  # 步长为1分钟
+            
             new_end_datetime = datetime.datetime.combine(end_date, end_time)
             
             # 自动计算持续时间
@@ -496,8 +504,19 @@ def activity_form():
             st.session_state.end_datetime = new_end_datetime
     
     # 其他按钮（在表单外）
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
+        # 添加上一个活动结束时间按钮
+        if st.session_state.activities:
+            last_activity = st.session_state.activities[-1]
+            last_end_time = datetime.datetime.fromisoformat(last_activity["end_time"])
+            if st.button("🕒 使用上一个活动结束时间", use_container_width=True):
+                st.session_state.start_datetime = last_end_time
+                st.session_state.end_datetime = last_end_time + timedelta(hours=1)
+                st.success(f"已设置开始时间为上一个活动的结束时间: {last_end_time.strftime('%Y-%m-%d %H:%M')}")
+                st.rerun()
+    
+    with col2:
         clear_form = st.button("🗑️ 清空表单", use_container_width=True)
     
     if submitted:
