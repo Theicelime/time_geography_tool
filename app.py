@@ -371,6 +371,12 @@ def activity_form():
     """活动记录表单"""
     st.markdown('<div class="sub-header">📝 记录新活动</div>', unsafe_allow_html=True)
     
+    # 初始化时间状态
+    if 'start_datetime' not in st.session_state:
+        st.session_state.start_datetime = datetime.datetime.now()
+    if 'end_datetime' not in st.session_state:
+        st.session_state.end_datetime = datetime.datetime.now() + timedelta(hours=1)
+    
     # 检查是否有模板数据要填充
     prefilled_data = st.session_state.get('template_data', {})
     
@@ -382,19 +388,24 @@ def activity_form():
         # 时间信息
         col1, col2 = st.columns(2)
         with col1:
-            start_date = st.date_input("开始日期*", value=datetime.date.today())
-            start_time = st.time_input("开始时间*", value=datetime.datetime.now().time())
-            start_datetime = datetime.datetime.combine(start_date, start_time)
+            # 使用session_state来保持时间状态
+            start_date = st.date_input("开始日期*", value=st.session_state.start_datetime.date())
+            start_time = st.time_input("开始时间*", value=st.session_state.start_datetime.time())
+            new_start_datetime = datetime.datetime.combine(start_date, start_time)
             
         with col2:
-            end_date = st.date_input("结束日期*", value=datetime.date.today())
-            end_time = st.time_input("结束时间*", value=(datetime.datetime.now() + timedelta(hours=1)).time())
-            end_datetime = datetime.datetime.combine(end_date, end_time)
+            end_date = st.date_input("结束日期*", value=st.session_state.end_datetime.date())
+            end_time = st.time_input("结束时间*", value=st.session_state.end_datetime.time())
+            new_end_datetime = datetime.datetime.combine(end_date, end_time)
             
             # 自动计算持续时间
-            if start_datetime and end_datetime:
-                duration = max(1, int((end_datetime - start_datetime).total_seconds() / 60))
-                st.write(f"**持续时间:** {duration} 分钟")
+            if new_start_datetime and new_end_datetime:
+                if new_end_datetime > new_start_datetime:
+                    duration = int((new_end_datetime - new_start_datetime).total_seconds() / 60)
+                    st.write(f"**持续时间:** {duration} 分钟")
+                else:
+                    st.error("结束时间必须晚于开始时间")
+                    duration = 60
             else:
                 duration = 60
         
@@ -474,6 +485,11 @@ def activity_form():
         
         # 表单提交按钮
         submitted = st.form_submit_button("✅ 添加活动", use_container_width=True)
+        
+        # 如果表单被提交，更新session_state中的时间
+        if submitted:
+            st.session_state.start_datetime = new_start_datetime
+            st.session_state.end_datetime = new_end_datetime
     
     # 其他按钮（在表单外）
     col1, col2, col3 = st.columns(3)
@@ -490,7 +506,7 @@ def activity_form():
     if submitted:
         # 验证必填字段
         required_fields = [
-            start_datetime, end_datetime, 
+            new_start_datetime, new_end_datetime, 
             'location_category' in locals() and location_category,
             'location_tag' in locals() and location_tag,
             'location_name' in locals() and location_name,
@@ -501,18 +517,18 @@ def activity_form():
             st.error("请填写所有必填字段（标*的字段）")
             return
         
-        if end_datetime <= start_datetime:
+        if new_end_datetime <= new_start_datetime:
             st.error("结束时间必须晚于开始时间")
             return
         
         # 计算持续时间
-        duration = int((end_datetime - start_datetime).total_seconds() / 60)
+        duration = int((new_end_datetime - new_start_datetime).total_seconds() / 60)
         
         # 创建活动对象
         activity = {
             "id": len(st.session_state.activities) + 1,
-            "start_time": start_datetime.isoformat(),
-            "end_time": end_datetime.isoformat(),
+            "start_time": new_start_datetime.isoformat(),
+            "end_time": new_end_datetime.isoformat(),
             "duration": duration,
             "location_category": location_category,
             "location_tag": location_tag,
@@ -575,9 +591,12 @@ def activity_form():
             st.warning("该地点模板已存在")
     
     if clear_form:
-        # 清除模板数据
+        # 清除模板数据和重置时间
         if 'template_data' in st.session_state:
             del st.session_state.template_data
+        # 重置时间为当前时间
+        st.session_state.start_datetime = datetime.datetime.now()
+        st.session_state.end_datetime = datetime.datetime.now() + timedelta(hours=1)
         st.rerun()
 
 # 创建行为类型时间分布图
