@@ -81,36 +81,96 @@ def initialize_data():
             LOCATION_CATEGORIES_FILE, default_location_categories
         )
     
-    # 分类系统
+    # 分类系统 - 根据论文优化为五级结构
     default_classification_system = {
         "个人": {
             "个人生理": {
-                "睡觉休息": {"睡觉": ["夜间睡眠", "午睡", "小憩"], "休息": ["放松", "冥想", "发呆"]},
-                "进食": {"用餐": ["早餐", "午餐", "晚餐", "零食"], "饮水": ["喝水", "饮茶", "饮料"]},
-                "个人健康维护": {"洗漱": ["刷牙", "洗脸", "洗澡"], "健康检查": ["体检", "看医生"], "调理身体": ["按摩", "理疗", "泡脚"]}
+                "睡觉休息": {
+                    "睡觉": ["夜间睡眠", "午睡", "小憩"],
+                    "休息": ["放松", "冥想", "发呆"]
+                },
+                "进食": {
+                    "用餐": ["早餐", "午餐", "晚餐", "零食"],
+                    "饮水": ["喝水", "饮茶", "饮料"]
+                },
+                "个人健康维护": {
+                    "洗漱": ["刷牙", "洗脸", "洗澡"],
+                    "调理身体": ["按摩", "理疗", "泡脚", "推拿", "针灸"],
+                    "健康监测": ["体检", "看医生", "吃药", "康复训练"]
+                }
             },
             "个人休闲": {
-                "娱乐消遣": {"看电视": ["电视剧", "电影", "综艺"], "游戏": ["手机游戏", "电脑游戏", "主机游戏"]},
-                "阅读学习": {"阅读": ["看书", "看新闻", "看杂志"], "学习": ["在线课程", "技能提升", "语言学习"]},
-                "运动锻炼": {"做操": ["太极", "八段锦", "广播体操"], "健身": ["跑步", "游泳", "器械训练"]}
+                "娱乐消遣": {
+                    "看电视": ["电视剧", "电影", "综艺"],
+                    "游戏": ["手机游戏", "电脑游戏", "主机游戏"]
+                },
+                "阅读学习": {
+                    "阅读": ["看书", "看新闻", "看杂志"],
+                    "学习": ["在线课程", "技能提升", "语言学习"]
+                },
+                "运动锻炼": {
+                    "做操": ["太极", "八段锦", "广播体操"],
+                    "健身": ["跑步", "游泳", "器械训练"]
+                }
             }
         },
         "家庭": {
             "家庭空间维护": {
-                "清洁打扫": {"打扫": ["扫地", "拖地", "整理"], "洗涤": ["洗衣", "晾衣", "熨烫"]}
+                "清洁打扫": {
+                    "打扫": ["扫地", "拖地", "整理", "倒垃圾"],
+                    "洗涤": ["洗衣", "晾衣", "熨烫"]
+                }
             },
             "照顾家人": {
-                "照顾孩子": {"接送": ["上学接送", "活动接送"], "陪伴": ["陪玩", "作业辅导", "亲子时光"]}
+                "照顾孩子": {
+                    "接送": ["上学接送", "活动接送"],
+                    "陪伴": ["陪玩", "作业辅导", "亲子时光"],
+                    "学习辅导": ["检查作业", "批改作业", "带孩子复习"]
+                }
+            }
+        },
+        "社会": {
+            "维护邻里关系": {
+                "参与社区活动": {
+                    "广场舞": [],
+                    "打牌": [],
+                    "做操": []
+                }
+            }
+        },
+        "食物": {
+            "获取食物": {
+                "采购食材": {
+                    "在餐厅购买": [],
+                    "在商店购买": [],
+                    "外卖": ["点外卖", "取外卖", "查外卖信息"]
+                }
+            }
+        },
+        "养育": {
+            "照顾孩子学习": {
+                "照顾孩子学校学习": {
+                    "准备学习工具": [],
+                    "提醒督促": [],
+                    "辅导功课": ["检查作业", "批改作业", "带孩子复习"]
+                }
             }
         },
         "工作": {
             "办公": {
-                "日常工作": {"会议": ["团队会议", "项目讨论", "客户会议"], "文档处理": ["报告编写", "邮件处理", "资料整理"]}
+                "日常工作": {
+                    "会议": ["团队会议", "项目讨论", "客户会议"],
+                    "文档处理": ["报告编写", "邮件处理", "资料整理"]
+                }
             }
         },
         "移动": {
             "交通出行": {
-                "通勤": {"上班通勤": ["地铁", "公交", "开车", "骑行"], "日常出行": ["步行", "打车", "骑车"]}
+                "通勤": {
+                    "步行": [],
+                    "小汽车": ["驾车", "乘车", "停车"],
+                    "公共交通": ["地铁", "公交", "班车"]
+                }
             }
         }
     }
@@ -304,6 +364,23 @@ def smart_map_selector():
     
     return coordinates, searched_location, selected_common_location
 
+# 获取所有行为选项
+def get_all_behaviors():
+    """获取所有行为选项"""
+    behaviors = []
+    for demand, projects in st.session_state.classification_system.items():
+        for project, activities in projects.items():
+            for activity, behavior_dict in activities.items():
+                for behavior, episodes in behavior_dict.items():
+                    behaviors.append({
+                        "demand": demand,
+                        "project": project,
+                        "activity": activity,
+                        "behavior": behavior,
+                        "full_path": f"{demand} > {project} > {activity} > {behavior}"
+                    })
+    return behaviors
+
 # 活动记录表单
 def activity_form():
     """活动记录表单"""
@@ -326,26 +403,21 @@ def activity_form():
     # 使用st.form的正确方式 - 只包含表单字段，不包含按钮
     with st.form(key="activity_form"):
         # 时间信息
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
         with col1:
             start_date = st.date_input("开始日期*", value=datetime.date.today())
-            start_time = st.time_input("开始时间*", value=datetime.time(9, 0))
+            start_time = st.time_input("开始时间*", value=datetime.datetime.now().time())
             start_datetime = datetime.datetime.combine(start_date, start_time)
             
         with col2:
             end_date = st.date_input("结束日期*", value=datetime.date.today())
-            end_time = st.time_input("结束时间*", value=datetime.time(10, 0))
+            end_time = st.time_input("结束时间*", value=(datetime.datetime.now() + timedelta(hours=1)).time())
             end_datetime = datetime.datetime.combine(end_date, end_time)
             
-        with col3:
             # 自动计算持续时间
             if start_datetime and end_datetime:
-                duration_minutes = max(1, int((end_datetime - start_datetime).total_seconds() / 60))
-            else:
-                duration_minutes = 60
-                
-            duration = st.number_input("持续时间(分钟)*", min_value=1, max_value=1440, 
-                                     value=duration_minutes)
+                duration = max(1, int((end_datetime - start_datetime).total_seconds() / 60))
+                st.write(f"**持续时间:** {duration} 分钟")
         
         # 地点信息
         st.markdown("**📍 地点信息**")
@@ -368,38 +440,48 @@ def activity_form():
                 
             location_name = st.text_input("具体地点名称*", placeholder="如：中关村大厦A座", value=default_location)
         
-        # 分类信息
+        # 分类信息 - 简化版本，重点在行为层级
         st.markdown("**🏷️ 活动分类**")
         
-        class_col1, class_col2 = st.columns(2)
-        with class_col1:
-            # 使用模板数据预填充
-            default_demand = prefilled_data.get('demand', '')
-            demand_type = st.selectbox("需求类型*", 
-                                     options=[""] + list(st.session_state.classification_system.keys()),
-                                     index=(list(st.session_state.classification_system.keys()).index(default_demand) + 1 
-                                           if default_demand in st.session_state.classification_system else 0))
-        with class_col2:
-            projects = list(st.session_state.classification_system.get(demand_type, {}).keys())
-            default_project = prefilled_data.get('project', '')
-            project_type = st.selectbox("企划类型*", options=[""] + projects,
-                                      index=(projects.index(default_project) + 1 
-                                           if default_project in projects else 0))
+        # 获取所有行为选项
+        all_behaviors = get_all_behaviors()
+        behavior_options = {b["full_path"]: b for b in all_behaviors}
         
-        class_col3, class_col4 = st.columns(2)
-        with class_col3:
-            activities = list(st.session_state.classification_system.get(demand_type, {}).get(project_type, {}).keys())
-            default_activity = prefilled_data.get('activity', '')
-            activity_type = st.selectbox("活动类型*", options=[""] + activities,
-                                       index=(activities.index(default_activity) + 1 
-                                            if default_activity in activities else 0))
-        with class_col4:
-            behaviors_dict = st.session_state.classification_system.get(demand_type, {}).get(project_type, {}).get(activity_type, {})
-            behaviors = list(behaviors_dict.keys()) if behaviors_dict else []
-            default_behavior = prefilled_data.get('behavior', '')
-            behavior_type = st.selectbox("行为类型*", options=[""] + behaviors,
-                                       index=(behaviors.index(default_behavior) + 1 
-                                            if default_behavior in behaviors else 0))
+        # 行为选择
+        selected_behavior_path = st.selectbox(
+            "选择行为*", 
+            options=[""] + list(behavior_options.keys()),
+            help="从预定义的行为中选择，或使用下方完整分类"
+        )
+        
+        # 如果选择了行为，自动填充分类
+        if selected_behavior_path and selected_behavior_path in behavior_options:
+            behavior_data = behavior_options[selected_behavior_path]
+            demand_type = behavior_data["demand"]
+            project_type = behavior_data["project"]
+            activity_type = behavior_data["activity"]
+            behavior_type = behavior_data["behavior"]
+        else:
+            # 完整分类选择（备选）
+            st.markdown("**或使用完整分类:**")
+            class_col1, class_col2, class_col3, class_col4 = st.columns(4)
+            
+            with class_col1:
+                demand_type = st.selectbox("需求类型", 
+                                         options=[""] + list(st.session_state.classification_system.keys()))
+            with class_col2:
+                projects = list(st.session_state.classification_system.get(demand_type, {}).keys())
+                project_type = st.selectbox("企划类型", options=[""] + projects)
+            with class_col3:
+                activities = list(st.session_state.classification_system.get(demand_type, {}).get(project_type, {}).keys())
+                activity_type = st.selectbox("活动类型", options=[""] + activities)
+            with class_col4:
+                behaviors_dict = st.session_state.classification_system.get(demand_type, {}).get(project_type, {}).get(activity_type, {})
+                behaviors = list(behaviors_dict.keys()) if behaviors_dict else []
+                behavior_type = st.selectbox("行为类型", options=[""] + behaviors)
+        
+        # 片段信息
+        episode = st.text_input("片段详情", placeholder="具体活动片段，如：午睡、早餐等")
         
         # 活动描述
         activity_description = st.text_area("活动描述", 
@@ -418,14 +500,16 @@ def activity_form():
     
     if submitted:
         # 验证必填字段
-        if not all([start_datetime, end_datetime, duration, location_category, location_name, 
-                   demand_type, project_type, activity_type, behavior_type]):
+        if not all([start_datetime, end_datetime, location_category, location_name]):
             st.error("请填写所有必填字段（标*的字段）")
             return
         
-        if duration <= 0:
-            st.error("持续时间必须大于0")
+        if end_datetime <= start_datetime:
+            st.error("结束时间必须晚于开始时间")
             return
+        
+        # 计算持续时间
+        duration = int((end_datetime - start_datetime).total_seconds() / 60)
         
         # 创建活动对象
         activity = {
@@ -437,10 +521,11 @@ def activity_form():
             "location_tag": location_tag,
             "location_name": location_name,
             "coordinates": coordinates,
-            "demand": demand_type,
-            "project": project_type,
-            "activity": activity_type,
-            "behavior": behavior_type,
+            "demand": demand_type if 'demand_type' in locals() else "",
+            "project": project_type if 'project_type' in locals() else "",
+            "activity": activity_type if 'activity_type' in locals() else "",
+            "behavior": behavior_type if 'behavior_type' in locals() else "",
+            "episode": episode,
             "description": activity_description,
             "created_at": datetime.datetime.now().isoformat()
         }
@@ -482,6 +567,107 @@ def activity_form():
         if 'template_data' in st.session_state:
             del st.session_state.template_data
         st.rerun()
+
+# 创建时间分布热力图
+def create_time_heatmap(level="demand"):
+    """创建时间分布热力图
+    level: 分类层级，可以是 'demand', 'project', 'activity'
+    """
+    if not st.session_state.activities:
+        st.info("暂无活动数据")
+        return
+    
+    # 准备数据
+    heatmap_data = []
+    
+    for activity in st.session_state.activities:
+        start_time = datetime.datetime.fromisoformat(activity["start_time"])
+        date = start_time.date()
+        hour = start_time.hour
+        
+        # 根据选择的层级获取分类
+        if level == "demand":
+            category = activity.get("demand", "未分类")
+        elif level == "project":
+            category = activity.get("project", "未分类")
+        elif level == "activity":
+            category = activity.get("activity", "未分类")
+        else:
+            category = activity.get("demand", "未分类")
+        
+        heatmap_data.append({
+            "date": date,
+            "hour": hour,
+            "category": category,
+            "duration": activity["duration"]
+        })
+    
+    if not heatmap_data:
+        return
+    
+    # 创建数据框
+    df = pd.DataFrame(heatmap_data)
+    
+    # 创建数据透视表
+    pivot_df = df.pivot_table(
+        index='hour', 
+        columns='date', 
+        values='duration', 
+        aggfunc='sum',
+        fill_value=0
+    )
+    
+    # 确保24小时完整
+    for h in range(24):
+        if h not in pivot_df.index:
+            pivot_df.loc[h] = 0
+    
+    pivot_df = pivot_df.sort_index()
+    
+    # 创建热力图
+    fig = px.imshow(
+        pivot_df,
+        labels=dict(x="日期", y="小时", color="总时长(分钟)"),
+        x=[d.strftime('%Y-%m-%d') for d in pivot_df.columns],
+        y=[f"{h:02d}:00" for h in pivot_df.index],
+        aspect="auto",
+        color_continuous_scale="viridis",
+        title=f"活动时间分布热力图 - 按{level}分类"
+    )
+    
+    fig.update_layout(
+        xaxis_title="日期",
+        yaxis_title="时间 (小时)",
+        height=500
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # 添加分类统计
+    st.markdown(f"**📊 {level}分类统计**")
+    category_stats = df.groupby('category')['duration'].sum().sort_values(ascending=False)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # 饼图显示分类时间占比
+        fig_pie = px.pie(
+            values=category_stats.values,
+            names=category_stats.index,
+            title=f"各{level}时间占比"
+        )
+        st.plotly_chart(fig_pie, use_container_width=True)
+    
+    with col2:
+        # 条形图显示分类统计
+        fig_bar = px.bar(
+            x=category_stats.values,
+            y=category_stats.index,
+            orientation='h',
+            title=f"各{level}总时长",
+            labels={'x': '总时长(分钟)', 'y': level}
+        )
+        st.plotly_chart(fig_bar, use_container_width=True)
 
 # 增强的数据概览
 def data_overview():
@@ -526,6 +712,17 @@ def data_overview():
                 <p>{label}</p>
             </div>
             """, unsafe_allow_html=True)
+    
+    # 时间分布热力图
+    st.markdown("---")
+    st.markdown("### 🕐 时间分布热力图")
+    
+    # 选择分类层级
+    level = st.selectbox("选择分类层级", 
+                        options=["demand", "project", "activity"],
+                        format_func=lambda x: {"demand": "需求", "project": "企划", "activity": "活动"}[x])
+    
+    create_time_heatmap(level)
     
     # 多维度分析
     st.markdown("---")
@@ -776,6 +973,7 @@ def activity_records():
                     </div>
                     <div style="background: #e3f2fd; padding: 0.5rem; border-radius: 5px; font-size: 0.9rem;">
                         {activity['demand']} → {activity['project']} → {activity['activity']} → {activity['behavior']}
+                        {f"<br>片段: {activity['episode']}" if activity.get('episode') else ""}
                     </div>
                     {f"<div style='margin-top: 0.5rem; color: #666;'>{activity['description']}</div>" if activity['description'] else ""}
                 </div>
@@ -880,7 +1078,10 @@ def create_enhanced_map(activities, display_date):
         "个人": "blue",
         "家庭": "green", 
         "工作": "red",
-        "移动": "orange"
+        "移动": "orange",
+        "社会": "purple",
+        "食物": "pink",
+        "养育": "brown"
     }
     
     # 添加轨迹线和标记点
@@ -1056,6 +1257,7 @@ def show_detailed_timeline(activities):
             with col2:
                 st.write(f"**时长:** {activity['duration']}分钟")
                 st.write(f"**行为:** {activity['behavior']}")
+                st.write(f"**片段:** {activity.get('episode', '无')}")
                 st.write(f"**结束时间:** {end_time.strftime('%H:%M')}")
             
             if activity['description']:
@@ -1473,10 +1675,10 @@ def classification_management():
     """分类系统管理"""
     st.markdown('<div class="sub-header">🏷️ 分类系统管理</div>', unsafe_allow_html=True)
     
-    st.info("在这里您可以自定义活动分类系统。分类系统采用四级结构：需求 → 企划 → 活动 → 行为")
+    st.info("在这里您可以自定义活动分类系统。分类系统采用五级结构：需求 → 企划 → 活动 → 行为 → 片段")
     
     # 选择要编辑的层级
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     
     with col1:
         demand_options = list(st.session_state.classification_system.keys())
@@ -1496,6 +1698,11 @@ def classification_management():
         if selected_demand and selected_project and selected_activity:
             behavior_options = list(st.session_state.classification_system[selected_demand][selected_project][selected_activity].keys())
             selected_behavior = st.selectbox("选择行为", options=behavior_options)
+    
+    with col5:
+        if selected_demand and selected_project and selected_activity and selected_behavior:
+            episode_options = st.session_state.classification_system[selected_demand][selected_project][selected_activity][selected_behavior]
+            selected_episode = st.selectbox("选择片段", options=episode_options)
     
     # 编辑区域
     st.markdown("---")
@@ -1540,6 +1747,15 @@ def classification_management():
                     save_all_data()
                     st.success(f"已添加行为: {new_behavior}")
                     st.rerun()
+        
+        if selected_demand and selected_project and selected_activity and selected_behavior:
+            new_episode = st.text_input("新片段名称")
+            if st.button("添加片段") and new_episode:
+                if new_episode not in st.session_state.classification_system[selected_demand][selected_project][selected_activity][selected_behavior]:
+                    st.session_state.classification_system[selected_demand][selected_project][selected_activity][selected_behavior].append(new_episode)
+                    save_all_data()
+                    st.success(f"已添加片段: {new_episode}")
+                    st.rerun()
     
     with edit_col2:
         st.markdown("**删除分类**")
@@ -1570,6 +1786,13 @@ def classification_management():
                 del st.session_state.classification_system[selected_demand][selected_project][selected_activity][selected_behavior]
                 save_all_data()
                 st.success(f"已删除行为: {selected_behavior}")
+                st.rerun()
+        
+        if selected_demand and selected_project and selected_activity and selected_behavior and selected_episode and len(st.session_state.classification_system[selected_demand][selected_project][selected_activity][selected_behavior]) > 1:
+            if st.button("删除当前片段", type="secondary"):
+                st.session_state.classification_system[selected_demand][selected_project][selected_activity][selected_behavior].remove(selected_episode)
+                save_all_data()
+                st.success(f"已删除片段: {selected_episode}")
                 st.rerun()
 
 # 数据管理
