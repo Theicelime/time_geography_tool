@@ -374,6 +374,9 @@ def activity_form():
     # 检查是否有模板数据要填充
     prefilled_data = st.session_state.get('template_data', {})
     
+    # 先显示地图选择器（在表单外）
+    coordinates, searched_location = smart_map_selector()
+    
     # 使用st.form的正确方式
     with st.form(key="activity_form"):
         # 时间信息
@@ -424,13 +427,6 @@ def activity_form():
                 location_tag = st.text_input("地点标签*", placeholder="如：家")
             with loc_col3:
                 location_name = st.text_input("具体地点名称*", placeholder="如：中关村大厦A座")
-            
-            # 地图选择器
-            coordinates, searched_location = smart_map_selector()
-            
-            # 如果有搜索到地点，更新地点名称
-            if searched_location and not location_name:
-                location_name = searched_location['name']
         
         # 活动信息
         st.markdown("**🏷️ 活动分类**")
@@ -476,15 +472,15 @@ def activity_form():
                                           placeholder="详细描述活动内容和情境...",
                                           height=100)
         
-        # 提交按钮
+        # 表单提交按钮
         submitted = st.form_submit_button("✅ 添加活动", use_container_width=True)
     
-    # 其他按钮
+    # 其他按钮（在表单外）
     col1, col2, col3 = st.columns(3)
     with col1:
         save_as_template = st.button("💾 保存为活动模板", use_container_width=True)
     with col2:
-        if not selected_location_template and location_tag:
+        if not selected_location_template and 'location_tag' in locals() and location_tag:
             save_location_template = st.button("💾 保存为地点模板", use_container_width=True)
         else:
             save_location_template = False
@@ -493,7 +489,15 @@ def activity_form():
     
     if submitted:
         # 验证必填字段
-        if not all([start_datetime, end_datetime, location_category, location_tag, location_name, selected_episode]):
+        required_fields = [
+            start_datetime, end_datetime, 
+            'location_category' in locals() and location_category,
+            'location_tag' in locals() and location_tag,
+            'location_name' in locals() and location_name,
+            selected_episode
+        ]
+        
+        if not all(required_fields):
             st.error("请填写所有必填字段（标*的字段）")
             return
         
@@ -554,7 +558,7 @@ def activity_form():
         else:
             st.warning("该活动模板已存在")
     
-    if save_location_template and location_tag:
+    if save_location_template and 'location_tag' in locals() and location_tag:
         # 保存为地点模板
         template_name = f"{location_tag}"
         if template_name not in st.session_state.location_templates:
