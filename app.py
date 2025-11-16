@@ -972,13 +972,18 @@ def location_templates_management():
         # 创建新地点模板
         st.markdown("**✏️ 创建地点模板**")
         
+        # 将地图选择器移到表单外部
+        st.markdown("**🗺️ 地点选择**")
+        coordinates, searched_location = smart_map_selector()
+        
         with st.form("location_template_form"):
             loc_category = st.text_input("地点大类*", placeholder="如：居住场所")
             loc_tag = st.text_input("地点标签*", placeholder="如：家")
             loc_name = st.text_input("具体地点名称*", placeholder="如：中关村大厦A座")
             
-            # 地图选择器
-            coordinates, searched_location = smart_map_selector()
+            # 显示已选择的坐标
+            if coordinates:
+                st.info(f"📍 已选择坐标: {coordinates['lat']:.4f}, {coordinates['lng']:.4f}")
             
             submitted = st.form_submit_button("保存地点模板", use_container_width=True)
             
