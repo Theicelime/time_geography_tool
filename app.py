@@ -386,25 +386,34 @@ def activity_form():
     # 使用st.form的正确方式
     with st.form(key="activity_form"):
         # 时间信息
-        col1, col2 = st.columns(2)
+        st.markdown("**🕒 时间信息**")
+        
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
-            # 使用session_state来保持时间状态
             start_date = st.date_input("开始日期*", value=st.session_state.start_datetime.date())
-            # 精确到分钟的时间输入
-            start_time = st.time_input("开始时间*", 
-                                     value=st.session_state.start_datetime.time(),
-                                     step=60)  # 步长为1分钟
-            
-            new_start_datetime = datetime.datetime.combine(start_date, start_time)
-            
         with col2:
-            end_date = st.date_input("结束日期*", value=st.session_state.end_datetime.date())
-            # 精确到分钟的时间输入
-            end_time = st.time_input("结束时间*", 
-                                   value=st.session_state.end_datetime.time(),
-                                   step=60)  # 步长为1分钟
+            # 直接输入小时和分钟
+            start_hour = st.number_input("开始小时", min_value=0, max_value=23, 
+                                       value=st.session_state.start_datetime.hour, step=1)
+        with col3:
+            start_minute = st.number_input("开始分钟", min_value=0, max_value=59, 
+                                         value=st.session_state.start_datetime.minute, step=1)
+        with col4:
+            new_start_datetime = datetime.datetime.combine(start_date, datetime.time(start_hour, start_minute))
+            st.write(f"**开始时间:** {new_start_datetime.strftime('%H:%M')}")
             
-            new_end_datetime = datetime.datetime.combine(end_date, end_time)
+        col5, col6, col7, col8 = st.columns(4)
+        with col5:
+            end_date = st.date_input("结束日期*", value=st.session_state.end_datetime.date())
+        with col6:
+            # 直接输入小时和分钟
+            end_hour = st.number_input("结束小时", min_value=0, max_value=23, 
+                                     value=st.session_state.end_datetime.hour, step=1)
+        with col7:
+            end_minute = st.number_input("结束分钟", min_value=0, max_value=59, 
+                                       value=st.session_state.end_datetime.minute, step=1)
+        with col8:
+            new_end_datetime = datetime.datetime.combine(end_date, datetime.time(end_hour, end_minute))
             
             # 自动计算持续时间
             if new_start_datetime and new_end_datetime:
