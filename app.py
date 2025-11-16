@@ -438,6 +438,10 @@ def activity_form():
                 location_tag = st.text_input("地点标签*", placeholder="如：家")
             with loc_col3:
                 location_name = st.text_input("具体地点名称*", placeholder="如：中关村大厦A座")
+            
+            # 如果有搜索到地点，更新地点名称
+            if searched_location and not location_name:
+                location_name = searched_location['name']
         
         # 活动信息
         st.markdown("**🏷️ 活动分类**")
@@ -492,15 +496,8 @@ def activity_form():
             st.session_state.end_datetime = new_end_datetime
     
     # 其他按钮（在表单外）
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     with col1:
-        save_as_template = st.button("💾 保存为活动模板", use_container_width=True)
-    with col2:
-        if not selected_location_template and 'location_tag' in locals() and location_tag:
-            save_location_template = st.button("💾 保存为地点模板", use_container_width=True)
-        else:
-            save_location_template = False
-    with col3:
         clear_form = st.button("🗑️ 清空表单", use_container_width=True)
     
     if submitted:
@@ -547,6 +544,27 @@ def activity_form():
         st.session_state.activities.append(activity)
         st.session_state.activities.sort(key=lambda x: x["start_time"])
         
+        # 自动保存地点模板
+        if not selected_location_template and location_tag and location_tag not in st.session_state.location_templates:
+            st.session_state.location_templates[location_tag] = {
+                "category": location_category,
+                "tag": location_tag,
+                "name": location_name,
+                "coordinates": coordinates
+            }
+            st.success(f"📍 已自动保存地点模板: {location_tag}")
+        
+        # 自动保存活动模板
+        if selected_episode and selected_episode not in st.session_state.activity_templates:
+            st.session_state.activity_templates[selected_episode] = {
+                "demand": demand_type if 'demand_type' in locals() else "",
+                "project": project_type if 'project_type' in locals() else "",
+                "activity": activity_type if 'activity_type' in locals() else "",
+                "behavior": behavior_type if 'behavior_type' in locals() else "",
+                "episode": selected_episode
+            }
+            st.success(f"📋 已自动保存活动模板: {selected_episode}")
+        
         # 保存数据
         save_all_data()
         
@@ -557,39 +575,6 @@ def activity_form():
         st.success("🎉 活动添加成功！")
         st.rerun()
     
-    if save_as_template and selected_episode:
-        # 保存为活动模板
-        template_name = f"{selected_episode}"
-        if template_name not in st.session_state.activity_templates:
-            st.session_state.activity_templates[template_name] = {
-                "demand": demand_type if 'demand_type' in locals() else "",
-                "project": project_type if 'project_type' in locals() else "",
-                "activity": activity_type if 'activity_type' in locals() else "",
-                "behavior": behavior_type if 'behavior_type' in locals() else "",
-                "episode": selected_episode
-            }
-            save_all_data()
-            st.success(f"活动模板 '{template_name}' 已保存")
-            st.rerun()
-        else:
-            st.warning("该活动模板已存在")
-    
-    if save_location_template and 'location_tag' in locals() and location_tag:
-        # 保存为地点模板
-        template_name = f"{location_tag}"
-        if template_name not in st.session_state.location_templates:
-            st.session_state.location_templates[template_name] = {
-                "category": location_category,
-                "tag": location_tag,
-                "name": location_name,
-                "coordinates": coordinates
-            }
-            save_all_data()
-            st.success(f"地点模板 '{template_name}' 已保存")
-            st.rerun()
-        else:
-            st.warning("该地点模板已存在")
-    
     if clear_form:
         # 清除模板数据和重置时间
         if 'template_data' in st.session_state:
@@ -599,14 +584,14 @@ def activity_form():
         st.session_state.end_datetime = datetime.datetime.now() + timedelta(hours=1)
         st.rerun()
 
-# 创建行为类型时间分布图
-def create_behavior_timeline(start_date=None, end_date=None, level="episode"):
-    """创建行为类型时间分布图
+# 创建行为类型时间分布图 - 根据参考图重新设计
+def create_activity_sequence_chart(start_date=None, end_date=None, level="demand"):
+    """创建活动序列图 - 根据参考图4-14重新设计
     
     Args:
         start_date: 开始日期
         end_date: 结束日期  
-        level: 分类层级，可以是 'episode', 'behavior', 'activity'
+        level: 分类层级，可以是 'demand', 'project', 'activity'
     """
     if not st.session_state.activities:
         st.info("暂无活动数据")
@@ -624,112 +609,153 @@ def create_behavior_timeline(start_date=None, end_date=None, level="episode"):
         st.info("选定日期范围内没有活动数据")
         return
     
-    # 准备时间线数据
-    timeline_data = []
+    # 准备数据 - 按日期和小时分组
+    chart_data = []
     
     for activity in filtered_activities:
         start_time = datetime.datetime.fromisoformat(activity["start_time"])
+        date = start_time.date()
+        hour = start_time.hour
         
         # 根据选择的层级获取分类
-        if level == "episode":
-            category = activity.get("episode", "未分类")
-        elif level == "behavior":
-            category = activity.get("behavior", "未分类")
+        if level == "demand":
+            category = activity.get("demand", "未分类")
+        elif level == "project":
+            category = activity.get("project", "未分类")
         elif level == "activity":
             category = activity.get("activity", "未分类")
         else:
-            category = activity.get("episode", "未分类")
+            category = activity.get("demand", "未分类")
         
-        # 计算时间点（转换为一天内的时间）
-        time_point = start_time.hour + start_time.minute / 60
-        
-        timeline_data.append({
-            "date": start_time.date(),
-            "time": time_point,
-            "hour": start_time.hour,
+        chart_data.append({
+            "date": date,
+            "hour": hour,
             "category": category,
             "duration": activity["duration"],
             "demand": activity.get("demand", ""),
+            "project": activity.get("project", ""),
             "activity": activity.get("activity", ""),
-            "behavior": activity.get("behavior", ""),
-            "episode": activity.get("episode", ""),
             "location": activity.get("location_name", "")
         })
     
     # 创建数据框
-    df = pd.DataFrame(timeline_data)
+    df = pd.DataFrame(chart_data)
     
     if df.empty:
         st.info("没有符合条件的数据")
         return
     
-    # 创建散点图
-    fig = px.scatter(
-        df,
-        x="date",
-        y="time",
-        color="category",
-        size="duration",
-        hover_data=["demand", "activity", "behavior", "episode", "location", "duration"],
-        title=f"行为类型时间分布图 - 按{level}分类",
-        labels={
-            "date": "日期",
-            "time": "时间 (小时)",
-            "category": level,
-            "duration": "持续时间"
-        },
-        height=600
+    # 创建数据透视表 - 按日期和小时统计
+    pivot_df = df.pivot_table(
+        index='date', 
+        columns='hour', 
+        values='category', 
+        aggfunc=lambda x: x.mode()[0] if len(x.mode()) > 0 else '无活动',
+        fill_value='无活动'
     )
     
-    # 设置Y轴为24小时格式
-    fig.update_yaxes(
-        tickvals=list(range(0, 25, 2)),
-        ticktext=[f"{h:02d}:00" for h in range(0, 25, 2)],
-        range=[0, 24]
+    # 确保24小时完整
+    for h in range(24):
+        if h not in pivot_df.columns:
+            pivot_df[h] = '无活动'
+    
+    # 按小时排序
+    pivot_df = pivot_df.reindex(sorted(pivot_df.columns), axis=1)
+    
+    # 创建堆叠柱状图
+    # 首先需要将数据转换为长格式
+    long_data = []
+    for date in pivot_df.index:
+        for hour in pivot_df.columns:
+            category = pivot_df.loc[date, hour]
+            long_data.append({
+                'date': date,
+                'hour': hour,
+                'category': category
+            })
+    
+    long_df = pd.DataFrame(long_data)
+    
+    # 创建颜色映射
+    categories = long_df['category'].unique()
+    colors = px.colors.qualitative.Set3[:len(categories)]
+    color_map = {cat: color for cat, color in zip(categories, colors)}
+    
+    # 创建堆叠柱状图
+    fig = px.bar(
+        long_df,
+        x='date',
+        color='category',
+        color_discrete_map=color_map,
+        title=f"居民活动序列 - 按{level}分类",
+        labels={
+            "date": "日期",
+            "category": level,
+            "count": "活动数量"
+        },
+        height=500
     )
     
     # 调整布局
     fig.update_layout(
         xaxis_title="日期",
-        yaxis_title="时间",
+        yaxis_title="活动类型分布",
         legend_title=level,
-        hovermode="closest"
+        barmode='stack',
+        xaxis=dict(tickangle=45)
     )
     
     st.plotly_chart(fig, use_container_width=True)
     
-    # 添加统计信息
-    st.markdown(f"**📊 {level}分类统计**")
+    # 添加24小时分布视图
+    st.markdown("**🕐 24小时活动分布**")
     
-    # 按分类统计活动数量和总时长
-    category_stats = df.groupby('category').agg({
-        'duration': 'sum',
-        'date': 'count'
-    }).rename(columns={'date': 'count'}).sort_values('duration', ascending=False)
+    # 按小时统计活动类型
+    hour_data = []
+    for hour in range(24):
+        hour_activities = [a for a in filtered_activities 
+                          if datetime.datetime.fromisoformat(a["start_time"]).hour == hour]
+        
+        if hour_activities:
+            # 统计该小时的主要活动类型
+            categories = [a.get(level, "未分类") for a in hour_activities]
+            category_counts = Counter(categories)
+            main_category = category_counts.most_common(1)[0][0]
+            
+            hour_data.append({
+                "hour": hour,
+                "category": main_category,
+                "count": len(hour_activities)
+            })
+        else:
+            hour_data.append({
+                "hour": hour,
+                "category": "无活动",
+                "count": 0
+            })
     
-    col1, col2 = st.columns(2)
+    hour_df = pd.DataFrame(hour_data)
     
-    with col1:
-        # 活动数量分布
-        fig_count = px.bar(
-            category_stats,
-            x=category_stats.index,
-            y='count',
-            title=f"各{level}活动数量",
-            labels={'count': '活动数量', 'category': level}
-        )
-        st.plotly_chart(fig_count, use_container_width=True)
+    # 创建24小时分布图
+    fig_hour = px.bar(
+        hour_df,
+        x='hour',
+        y='count',
+        color='category',
+        color_discrete_map=color_map,
+        title="24小时活动类型分布",
+        labels={
+            "hour": "小时",
+            "count": "活动数量",
+            "category": level
+        }
+    )
     
-    with col2:
-        # 时长分布
-        fig_duration = px.bar(
-            category_stats,
-            x=category_stats.index,
-            y='duration',
-            title=f"各{level}总时长",
-            labels={'duration': '总时长(分钟)', 'category': level}
-        )
-        st.plotly_chart(fig_duration, use_container_width=True)
+    fig_hour.update_layout(
+        xaxis=dict(tickvals=list(range(0, 24, 2)))
+    )
+    
+    st.plotly_chart(fig_hour, use_container_width=True)
 
 # 增强的数据概览
 def data_overview():
@@ -760,13 +786,13 @@ def data_overview():
     with col3:
         level = st.selectbox(
             "分类层级", 
-            options=["episode", "behavior", "activity"],
-            format_func=lambda x: {"episode": "片段", "behavior": "行为", "activity": "活动"}[x]
+            options=["demand", "project", "activity"],
+            format_func=lambda x: {"demand": "需求", "project": "企划", "activity": "活动"}[x]
         )
     
-    # 显示行为类型时间分布图
-    st.markdown("### 🕐 行为类型时间分布")
-    create_behavior_timeline(start_date, end_date, level)
+    # 显示活动序列图
+    st.markdown("### 🕐 活动序列图")
+    create_activity_sequence_chart(start_date, end_date, level)
     
     # 基本统计信息
     st.markdown("### 📈 基本统计")
@@ -913,12 +939,17 @@ def location_templates_management():
         if st.session_state.location_templates:
             for template_name, template_data in st.session_state.location_templates.items():
                 with st.container():
+                    coord_info = ""
+                    if template_data.get("coordinates"):
+                        coord_info = f"<br><small>坐标: {template_data['coordinates']['lat']:.4f}, {template_data['coordinates']['lng']:.4f}</small>"
+                    
                     st.markdown(f"""
                     <div class="location-card">
                         <strong>{template_name}</strong><br>
                         <small>大类: {template_data['category']}</small><br>
                         <small>标签: {template_data['tag']}</small><br>
                         <small>名称: {template_data['name']}</small>
+                        {coord_info}
                     </div>
                     """, unsafe_allow_html=True)
                     
@@ -946,6 +977,9 @@ def location_templates_management():
             loc_tag = st.text_input("地点标签*", placeholder="如：家")
             loc_name = st.text_input("具体地点名称*", placeholder="如：中关村大厦A座")
             
+            # 地图选择器
+            coordinates, searched_location = smart_map_selector()
+            
             submitted = st.form_submit_button("保存地点模板", use_container_width=True)
             
             if submitted:
@@ -955,7 +989,7 @@ def location_templates_management():
                             "category": loc_category,
                             "tag": loc_tag,
                             "name": loc_name,
-                            "coordinates": None
+                            "coordinates": coordinates
                         }
                         save_all_data()
                         st.success(f"地点模板 '{loc_tag}' 已保存")
