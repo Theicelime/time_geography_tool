@@ -3,275 +3,306 @@ import json
 import datetime
 import os
 import time
-import pandas as pd
 
 # ==========================================
-# 1. 页面配置
+# 1. 核心配置与 CSS 设计系统
 # ==========================================
 st.set_page_config(
-    page_title="OneDay",
+    page_title="TimeLog",
     page_icon="🕰️",
     layout="centered",
     initial_sidebar_state="collapsed"
 )
 
-# 确保数据目录存在
-if not os.path.exists("data"):
-    os.makedirs("data")
-DATA_FILE = "data/activities.json"
+# 📂 数据路径
+DATA_DIR = "data"
+if not os.path.exists(DATA_DIR): os.makedirs(DATA_DIR)
+ACTIVITIES_FILE = os.path.join(DATA_DIR, "activities.json")
+TEMPLATES_FILE = os.path.join(DATA_DIR, "templates.json")
 
-# ==========================================
-# 2. CSS 美化 (iOS 风格)
-# ==========================================
+# 🎨 iOS 设计语言 CSS
 st.markdown("""
 <style>
-    .stApp { background-color: #F2F2F7; }
-    header, footer, #MainMenu { visibility: hidden; }
+    /* 1. 全局背景：高级灰 */
+    .stApp { background-color: #F5F5F7; }
+    header, footer { visibility: hidden; }
     
-    /* 标题区 */
-    .ios-header {
-        font-size: 20px; font-weight: 700; color: #1C1C1E;
-        padding: 15px 5px; display: flex; justify-content: space-between; align-items: center;
-    }
+    /* 2. 隐藏 Streamlit 默认丑陋的元素 */
+    #MainMenu { visibility: hidden; }
+    .stDeployButton { visibility: hidden; }
     
-    /* 卡片通用样式 */
-    .ios-card {
+    /* 3. 卡片容器设计 - 核心 */
+    .design-card {
         background-color: #FFFFFF;
-        border-radius: 12px;
-        padding: 16px;
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 16px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.03); /* 极柔和的阴影 */
+        border: 1px solid rgba(0,0,0,0.02);
+    }
+    
+    /* 4. 标题排版 */
+    .card-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: #86868B; /* 苹果灰 */
         margin-bottom: 12px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
     }
     
-    /* 按钮样式优化 */
-    .stButton button {
-        background-color: #007AFF !important;
-        color: white !important;
-        border-radius: 10px !important;
+    /* 5. 状态标签 */
+    .status-badge {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 700;
+    }
+    .badge-new { background: #FFE5E5; color: #FF3B30; } /* 红 */
+    .badge-exist { background: #E4FBF0; color: #34C759; } /* 绿 */
+    
+    /* 6. 输入框优化 - 去除边框，融入背景 */
+    .stTextInput input, .stSelectbox div[data-baseweb="select"] > div {
+        background-color: #F5F5F7 !important;
         border: none !important;
-        font-weight: 600 !important;
+        border-radius: 10px !important;
+        height: 42px;
+    }
+    
+    /* 7. 按钮 - 悬浮感 */
+    .stButton button {
         width: 100%;
+        height: 52px !important;
+        background: linear-gradient(135deg, #007AFF 0%, #005ECB 100%) !important;
+        border: none !important;
+        border-radius: 14px !important;
+        font-size: 17px !important;
+        font-weight: 600 !important;
+        color: white !important;
+        box-shadow: 0 4px 12px rgba(0, 122, 255, 0.25);
+        transition: transform 0.1s;
     }
-    
-    /* 紧凑布局调整 */
-    .stTimeInput div, .stDateInput div, .stTextInput div { margin-bottom: 0px; }
-    
-    /* 时间轴 */
-    .timeline-container {
-        height: 16px; background-color: #E5E5EA; border-radius: 8px;
-        display: flex; overflow: hidden; margin-top: 8px;
+    .stButton button:active { transform: scale(0.98); }
+
+    /* 8. 历史列表条目 */
+    .history-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 0;
+        border-bottom: 1px solid #F0F0F0;
     }
-    .timeline-seg { height: 100%; }
+    .history-row:last-child { border-bottom: none; }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 3. 数据加载与状态管理
+# 2. 数据逻辑层
 # ==========================================
-def load_data():
-    if not os.path.exists(DATA_FILE):
-        return []
-    try:
-        with open(DATA_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except:
-        return [] # 文件损坏时返回空列表
 
-def save_data(data):
-    with open(DATA_FILE, 'w', encoding='utf-8') as f:
+def load_json(path, default):
+    if os.path.exists(path):
+        try:
+            with open(path, 'r', encoding='utf-8') as f: return json.load(f)
+        except: pass
+    return default
+
+def save_json(path, data):
+    with open(path, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
+# 初始化数据
 if 'activities' not in st.session_state:
-    st.session_state.activities = load_data()
+    st.session_state.activities = load_json(ACTIVITIES_FILE, [])
+if 'templates' not in st.session_state:
+    st.session_state.templates = load_json(TEMPLATES_FILE, {})
 
-# 初始化输入状态 (只在第一次加载时运行)
-if 'input_init' not in st.session_state:
-    st.session_state.input_date = datetime.date.today()
-    st.session_state.input_start = datetime.datetime.now().time()
-    
-    # 尝试从最后一条记录获取接续时间
+# --- 智能时间计算 ---
+# 逻辑：默认开始时间 = 上一条记录的结束时间
+# 这个值只作为 Input 的 value 传入，不绑定 key，允许用户随意修改
+def get_default_times():
+    now = datetime.datetime.now()
     if st.session_state.activities:
+        last_record = st.session_state.activities[-1]
         try:
-            last_act = st.session_state.activities[-1]
-            last_end = datetime.datetime.fromisoformat(last_act['end_time'])
-            st.session_state.input_date = last_end.date() # 接续日期
-            st.session_state.input_start = last_end.time() # 接续时间
+            last_end = datetime.datetime.fromisoformat(last_record['end_time'])
+            # 如果上一条记录在24小时内，则接续；否则用当前时间
+            if (now - last_end).total_seconds() < 86400:
+                return last_end.time(), (last_end + datetime.timedelta(minutes=60)).time()
         except:
             pass
-            
-    st.session_state.input_end = (datetime.datetime.combine(datetime.date.today(), st.session_state.input_start) + datetime.timedelta(hours=1)).time()
-    st.session_state.input_init = True
+    return now.time(), (now + datetime.timedelta(minutes=60)).time()
+
+default_start, default_end = get_default_times()
+
+# 五级分类默认选项
+HIERARCHY = {
+    "需求": ["个人生理", "个人发展", "家庭责任", "工作学习", "休闲娱乐", "交通出行"],
+    "企划": ["睡眠", "饮食", "健康", "职业工作", "家务", "照顾", "学习", "消遣", "运动"],
+    "活动": ["睡觉", "吃饭", "洗漱", "办公", "会议", "烹饪", "清洁", "阅读", "刷手机", "游戏", "坐车"],
+    "行为": ["躺卧", "坐姿", "站立", "行走", "操作", "交流"]
+}
 
 # ==========================================
-# 4. 组件：可视化时间轴
+# 3. 页面主体 (UI渲染)
 # ==========================================
-def render_timeline(current_date):
-    """渲染指定日期的24小时时间轴"""
-    date_str = current_date.isoformat()
-    
-    # 获取当天的活动 (注意：这里简化了逻辑，只显示start_time在今天的，或者涉及今天的)
-    # 为了可视化简单，我们只渲染“start_time”在今天的活动
-    day_acts = [a for a in st.session_state.activities if a['start_time'].startswith(date_str)]
-    day_acts.sort(key=lambda x: x['start_time'])
-    
-    html_segments = ""
-    last_min = 0
-    
-    for act in day_acts:
-        s = datetime.datetime.fromisoformat(act['start_time'])
-        e = datetime.datetime.fromisoformat(act['end_time'])
-        
-        s_min = s.hour * 60 + s.minute
-        e_min = e.hour * 60 + e.minute
-        
-        # 修正跨天显示：如果 e_min < s_min (比如23:00到01:00)，说明跨天了
-        # 在当天的时间轴上，它应该一直延伸到24:00 (1440)
-        is_cross_day = False
-        if e_min < s_min or (e.date() > s.date()):
-            e_min = 1440 
-            is_cross_day = True
-            
-        # 绘制 Gap (空闲)
-        if s_min > last_min:
-            width = ((s_min - last_min) / 1440) * 100
-            html_segments += f'<div class="timeline-seg" style="width:{width}%; background-color:#E5E5EA;"></div>'
-            
-        # 绘制 Activity
-        width = ((e_min - s_min) / 1440) * 100
-        color = "#007AFF" if not is_cross_day else "#5856D6" # 跨天显示紫色
-        html_segments += f'<div class="timeline-seg" style="width:{width}%; background-color:{color};" title="{act["episode"]}"></div>'
-        
-        last_min = e_min
-        
-    # 绘制剩余
-    if last_min < 1440:
-        width = ((1440 - last_min) / 1440) * 100
-        html_segments += f'<div class="timeline-seg" style="width:{width}%; background-color:#E5E5EA;"></div>'
 
-    st.markdown(f"""
-    <div class="ios-card">
-        <div style="font-size:14px; font-weight:600; color:#333; margin-bottom:4px;">
-            📊 {current_date.strftime('%m-%d')} 时间分布
-        </div>
-        <div class="timeline-container">
-            {html_segments}
-        </div>
-        <div style="display:flex; justify-content:space-between; font-size:10px; color:#888; margin-top:4px;">
-            <span>00:00</span><span>12:00</span><span>24:00</span>
-        </div>
+# 标题区
+st.markdown("""
+    <div style='margin: 10px 0 20px 0; text-align:center;'>
+        <div style='font-size:24px; font-weight:800; color:#1D1D1F;'>TimeLog</div>
+        <div style='font-size:13px; color:#86868B;'>时空行为轨迹记录</div>
     </div>
-    """, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
-# ==========================================
-# 5. 主界面逻辑
-# ==========================================
+# === 核心卡片：新建记录 ===
+# 用 HTML div 模拟卡片容器的开始
+st.markdown('<div class="design-card">', unsafe_allow_html=True)
+st.markdown('<div class="card-title">✨ 新建记录 (New Entry)</div>', unsafe_allow_html=True)
 
-# 顶部标题栏
-c1, c2 = st.columns([3, 1])
-with c1:
-    st.markdown('<div class="ios-header">DailyLog</div>', unsafe_allow_html=True)
-with c2:
-    if st.button("重置", help="如果数据坏了点这里"):
-        st.session_state.activities = []
-        save_data([])
-        st.rerun()
+# 1. 核心输入：做什么？
+episode_input = st.text_input("准备做什么？", placeholder="输入活动名称，如: 打羽毛球", label_visibility="collapsed")
 
-# 1. 输入区域
-st.markdown('<div class="ios-card">', unsafe_allow_html=True)
-st.caption("📝 新建活动")
+# 2. 动态逻辑：判断是否为老活动
+is_new = False
+template_data = {}
 
-# 第一行：日期 + 活动名
-col_d1, col_d2 = st.columns([1, 2])
-with col_d1:
-    # 绑定 input_date，允许修改日期补录
-    date_val = st.date_input("日期", key="input_date", label_visibility="collapsed")
-with col_d2:
-    act_val = st.text_input("做什么?", key="input_act", placeholder="如: 睡觉、工作", label_visibility="collapsed")
+if episode_input:
+    if episode_input in st.session_state.templates:
+        # === 情境 A: 老活动 (模板) ===
+        t = st.session_state.templates[episode_input]
+        template_data = t
+        st.markdown(f"""
+            <div style='margin-bottom: 15px; display:flex; align-items:center; justify-content:space-between; background:#F5F5F7; padding:10px; border-radius:10px;'>
+                <div>
+                    <span class="status-badge badge-exist">已识别模板</span>
+                    <span style='margin-left:8px; font-size:13px; font-weight:600; color:#333;'>{episode_input}</span>
+                </div>
+                <div style='font-size:12px; color:#666;'>
+                    {t['demand']} > {t['activity']}
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+    else:
+        # === 情境 B: 新活动 (需补全) ===
+        is_new = True
+        st.markdown(f"""
+            <div style='margin-bottom: 15px;'>
+                <span class="status-badge badge-new">新活动</span>
+                <span style='font-size:13px; color:#666; margin-left:5px;'>请完善分类，下次自动记住</span>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        # 只有新活动才显示这 4 个下拉框
+        c1, c2 = st.columns(2)
+        with c1:
+            demand = st.selectbox("需求", HIERARCHY["需求"], key="new_demand")
+            activity = st.selectbox("活动", HIERARCHY["活动"], key="new_activity")
+        with c2:
+            project = st.selectbox("企划", HIERARCHY["企划"], key="new_project")
+            behavior = st.selectbox("行为", HIERARCHY["行为"], key="new_behavior")
+        
+        template_data = {
+            "demand": demand, "project": project, 
+            "activity": activity, "behavior": behavior
+        }
 
-# 第二行：开始时间 + 结束时间
+st.markdown('<hr style="border:none; height:1px; background:#F0F0F0; margin:15px 0;">', unsafe_allow_html=True)
+
+# 3. 时间与地点 (每次都要确认，与模板无关)
 col_t1, col_t2 = st.columns(2)
 with col_t1:
     st.caption("开始时间")
-    start_val = st.time_input("Start", key="input_start", step=60, label_visibility="collapsed")
+    # value 设为动态计算的 default_start，但没有 key，允许修改
+    inp_start = st.time_input("Start", value=default_start, step=60, label_visibility="collapsed")
 with col_t2:
     st.caption("结束时间")
-    end_val = st.time_input("End", key="input_end", step=60, label_visibility="collapsed")
+    inp_end = st.time_input("End", value=default_end, step=60, label_visibility="collapsed")
 
-# 提交按钮
-if st.button("保存记录"):
-    # 构建时间对象
-    dt_start = datetime.datetime.combine(date_val, start_val)
-    dt_end = datetime.datetime.combine(date_val, end_val)
-    
-    # 智能跨天处理
-    # 如果 结束 < 开始，假设是跨到第二天
-    if dt_end < dt_start:
-        dt_end += datetime.timedelta(days=1)
-        
-    duration = int((dt_end - dt_start).total_seconds() / 60)
-    
-    if not act_val:
-        st.toast("⚠️ 请填写活动内容")
+inp_loc = st.text_input("地点", placeholder="📍 地点 (如: 体育馆)", label_visibility="collapsed")
+
+st.markdown('</div>', unsafe_allow_html=True) # 结束卡片
+
+# === 底部按钮 ===
+if st.button("确认记录 (Save)"):
+    if not episode_input:
+        st.toast("⚠️ 请输入活动名称", icon="🤔")
     else:
-        new_act = {
+        # 1. 保存模板 (如果是新的)
+        if is_new:
+            st.session_state.templates[episode_input] = template_data
+            save_json(TEMPLATES_FILE, st.session_state.templates)
+        
+        # 2. 计算时间
+        today = datetime.date.today()
+        dt_start = datetime.datetime.combine(today, inp_start)
+        dt_end = datetime.datetime.combine(today, inp_end)
+        
+        # 跨天逻辑
+        if dt_end < dt_start:
+            dt_end += datetime.timedelta(days=1)
+        
+        duration = int((dt_end - dt_start).total_seconds() / 60)
+        
+        # 3. 保存记录
+        new_record = {
             "id": int(time.time()),
-            "episode": act_val,
+            "episode": episode_input,
             "start_time": dt_start.isoformat(),
             "end_time": dt_end.isoformat(),
             "duration": duration,
-            "location": "手动记录"
+            "location": inp_loc,
+            # 展开保存完整的五级分类
+            "demand": template_data.get("demand"),
+            "project": template_data.get("project"),
+            "activity": template_data.get("activity"),
+            "behavior": template_data.get("behavior"),
+            "created_at": datetime.datetime.now().isoformat()
         }
         
-        st.session_state.activities.append(new_act)
+        st.session_state.activities.append(new_record)
         st.session_state.activities.sort(key=lambda x: x['start_time'])
-        save_data(st.session_state.activities)
+        save_json(ACTIVITIES_FILE, st.session_state.activities)
         
-        # 自动准备下一条记录
-        # 下一次开始 = 这一次结束
-        st.session_state.input_start = dt_end.time()
-        # 如果跨天了，日期也要变
-        st.session_state.input_date = dt_end.date()
-        # 结束时间默认 +1 小时
-        st.session_state.input_end = (dt_end + datetime.timedelta(hours=1)).time()
-        st.session_state.input_act = ""
-        
-        st.toast(f"✅ 已保存: {act_val}")
+        st.toast(f"✅ 已记录: {episode_input}", icon="🎉")
         time.sleep(0.5)
         st.rerun()
-        
-st.markdown('</div>', unsafe_allow_html=True)
 
-# 2. 可视化展示 (展示选择日期的进度)
-render_timeline(date_val)
-
-# 3. 历史记录列表 (倒序)
+# === 历史记录卡片 ===
 if st.session_state.activities:
-    st.markdown("### 📋 记录列表")
-    # 仅显示最近 10 条
-    for act in reversed(st.session_state.activities[-10:]):
-        s = datetime.datetime.fromisoformat(act['start_time'])
-        e = datetime.datetime.fromisoformat(act['end_time'])
-        
-        # 计算是哪天
-        day_label = s.strftime('%m-%d')
-        if s.date() == datetime.date.today():
-            day_label = "今天"
+    st.markdown('<div class="design-card">', unsafe_allow_html=True)
+    st.markdown('<div class="card-title">📅 今日时间轴 (Today)</div>', unsafe_allow_html=True)
+    
+    # 获取今日数据
+    today_str = datetime.date.today().isoformat()
+    today_acts = [a for a in st.session_state.activities if a['start_time'].startswith(today_str)]
+    
+    if not today_acts:
+        st.info("今天还没有记录，开始新的一天吧！")
+    else:
+        # 倒序显示
+        for act in reversed(today_acts):
+            s = datetime.datetime.fromisoformat(act['start_time']).strftime('%H:%M')
+            e = datetime.datetime.fromisoformat(act['end_time']).strftime('%H:%M')
             
-        with st.container():
             st.markdown(f"""
-            <div class="ios-card" style="padding: 12px; display:flex; justify-content:space-between; align-items:center;">
-                <div>
-                    <div style="font-weight:600; color:#000;">{act['episode']}</div>
-                    <div style="font-size:12px; color:#888;">
-                        <span style="background:#eee; padding:2px 4px; border-radius:4px;">{day_label}</span> 
-                        {s.strftime('%H:%M')} - {e.strftime('%H:%M')} ({act['duration']}m)
-                    </div>
+            <div class="history-row">
+                <div style="display:flex; flex-direction:column;">
+                    <span style="font-size:15px; font-weight:700; color:#1D1D1F;">{act['episode']}</span>
+                    <span style="font-size:12px; color:#86868B; margin-top:2px;">
+                        {s} - {e} · {act['duration']} min
+                    </span>
+                </div>
+                <div style="text-align:right;">
+                    <span style="font-size:12px; background:#F0F0F0; color:#666; padding:3px 8px; border-radius:6px;">
+                        {act.get('location', '')}
+                    </span>
                 </div>
             </div>
             """, unsafe_allow_html=True)
             
-            # 删除按钮 (独立一行，防止布局挤压)
-            if st.button("🗑️ 删除", key=f"del_{act['id']}"):
-                st.session_state.activities = [a for a in st.session_state.activities if a['id'] != act['id']]
-                save_data(st.session_state.activities)
-                st.rerun()
+            # 删除逻辑 (为了美观，用 Streamlit 原生按钮放下面，或者用 col)
+            # 这里为了保持卡片纯洁，不放删除按钮，如需删除请在电脑端管理
+    
+    st.markdown('</div>', unsafe_allow_html=True)
