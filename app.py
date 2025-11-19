@@ -5,100 +5,91 @@ import os
 import time
 
 # ==========================================
-# 1. 核心配置与 CSS 设计系统
+# 1. 基础配置与 CSS
 # ==========================================
 st.set_page_config(
-    page_title="TimeLog",
+    page_title="TimeLog Pro",
     page_icon="🕰️",
     layout="centered",
     initial_sidebar_state="collapsed"
 )
 
-# 📂 数据路径
 DATA_DIR = "data"
 if not os.path.exists(DATA_DIR): os.makedirs(DATA_DIR)
 ACTIVITIES_FILE = os.path.join(DATA_DIR, "activities.json")
 TEMPLATES_FILE = os.path.join(DATA_DIR, "templates.json")
 
-# 🎨 iOS 设计语言 CSS
+# iOS 风格 CSS
 st.markdown("""
 <style>
-    /* 1. 全局背景：高级灰 */
     .stApp { background-color: #F5F5F7; }
-    header, footer { visibility: hidden; }
+    header, footer, #MainMenu { visibility: hidden; }
     
-    /* 2. 隐藏 Streamlit 默认丑陋的元素 */
-    #MainMenu { visibility: hidden; }
-    .stDeployButton { visibility: hidden; }
-    
-    /* 3. 卡片容器设计 - 核心 */
+    /* 卡片设计 */
     .design-card {
         background-color: #FFFFFF;
         border-radius: 16px;
         padding: 20px;
         margin-bottom: 16px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.03); /* 极柔和的阴影 */
+        box-shadow: 0 4px 15px rgba(0,0,0,0.03);
         border: 1px solid rgba(0,0,0,0.02);
     }
     
-    /* 4. 标题排版 */
+    /* 标题 */
     .card-title {
-        font-size: 14px;
-        font-weight: 600;
-        color: #86868B; /* 苹果灰 */
-        margin-bottom: 12px;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
+        font-size: 13px; font-weight: 700; color: #86868B;
+        margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px;
     }
     
-    /* 5. 状态标签 */
-    .status-badge {
-        display: inline-block;
-        padding: 4px 10px;
-        border-radius: 20px;
-        font-size: 12px;
-        font-weight: 700;
-    }
-    .badge-new { background: #FFE5E5; color: #FF3B30; } /* 红 */
-    .badge-exist { background: #E4FBF0; color: #34C759; } /* 绿 */
-    
-    /* 6. 输入框优化 - 去除边框，融入背景 */
-    .stTextInput input, .stSelectbox div[data-baseweb="select"] > div {
-        background-color: #F5F5F7 !important;
-        border: none !important;
-        border-radius: 10px !important;
-        height: 42px;
+    /* 智能标签 */
+    .smart-badge {
+        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+        color: white; padding: 4px 10px; border-radius: 12px;
+        font-size: 12px; font-weight: bold; display: inline-flex; align-items: center;
     }
     
-    /* 7. 按钮 - 悬浮感 */
+    /* 按钮优化 */
     .stButton button {
-        width: 100%;
-        height: 52px !important;
-        background: linear-gradient(135deg, #007AFF 0%, #005ECB 100%) !important;
-        border: none !important;
-        border-radius: 14px !important;
-        font-size: 17px !important;
-        font-weight: 600 !important;
-        color: white !important;
-        box-shadow: 0 4px 12px rgba(0, 122, 255, 0.25);
-        transition: transform 0.1s;
+        width: 100%; height: 50px !important;
+        background: #007AFF !important; color: white !important;
+        border-radius: 12px !important; font-weight: 600 !important; border: none !important;
     }
-    .stButton button:active { transform: scale(0.98); }
-
-    /* 8. 历史列表条目 */
-    .history-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 12px 0;
-        border-bottom: 1px solid #F0F0F0;
+    
+    /* 输入框样式 */
+    div[data-baseweb="select"] > div, .stTextInput input, .stTimeInput input {
+        background-color: #F5F5F7 !important; border: none !important;
+        border-radius: 10px !important; min-height: 42px;
     }
-    .history-row:last-child { border-bottom: none; }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 数据逻辑层
+# 2. 智能引擎 (常识库)
+# ==========================================
+
+# 这是系统的“大脑”，你可以随时扩展这个字典
+KNOWLEDGE_BASE = {
+    "睡觉": {"demand": "个人生理", "project": "睡眠", "activity": "睡觉", "behavior": "躺卧"},
+    "午睡": {"demand": "个人生理", "project": "睡眠", "activity": "睡觉", "behavior": "躺卧"},
+    "吃饭": {"demand": "个人生理", "project": "饮食", "activity": "吃饭", "behavior": "坐姿"},
+    "工作": {"demand": "工作学习", "project": "职业工作", "activity": "办公", "behavior": "坐姿"},
+    "开会": {"demand": "工作学习", "project": "职业工作", "activity": "会议", "behavior": "坐姿"},
+    "坐地铁": {"demand": "交通出行", "project": "移动", "activity": "坐车", "behavior": "坐姿"},
+    "开车": {"demand": "交通出行", "project": "移动", "activity": "开车", "behavior": "坐姿"},
+    "打羽毛球": {"demand": "休闲娱乐", "project": "运动", "activity": "健身", "behavior": "跑动"},
+    "刷手机": {"demand": "休闲娱乐", "project": "消遣", "activity": "刷手机", "behavior": "躺卧"},
+    "洗澡": {"demand": "个人生理", "project": "健康", "activity": "洗漱", "behavior": "站立"},
+}
+
+HIERARCHY = {
+    "需求": ["个人生理", "个人发展", "家庭责任", "工作学习", "休闲娱乐", "交通出行", "社交互动"],
+    "企划": ["睡眠", "饮食", "健康", "职业工作", "家务", "照顾", "学习", "消遣", "运动", "移动"],
+    "活动": ["睡觉", "吃饭", "洗漱", "办公", "会议", "烹饪", "清洁", "阅读", "刷手机", "游戏", "坐车", "开车", "健身", "聊天"],
+    "行为": ["躺卧", "坐姿", "站立", "行走", "跑动", "操作", "交流"]
+}
+
+# ==========================================
+# 3. 逻辑处理
 # ==========================================
 
 def load_json(path, default):
@@ -112,197 +103,201 @@ def save_json(path, data):
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-# 初始化数据
+# 初始化
 if 'activities' not in st.session_state:
     st.session_state.activities = load_json(ACTIVITIES_FILE, [])
 if 'templates' not in st.session_state:
-    st.session_state.templates = load_json(TEMPLATES_FILE, {})
+    st.session_state.templates = load_json(TEMPLATES_FILE, {}) # 用户自定义的模板
 
-# --- 智能时间计算 ---
-# 逻辑：默认开始时间 = 上一条记录的结束时间
-# 这个值只作为 Input 的 value 传入，不绑定 key，允许用户随意修改
-def get_default_times():
-    now = datetime.datetime.now()
-    if st.session_state.activities:
-        last_record = st.session_state.activities[-1]
-        try:
-            last_end = datetime.datetime.fromisoformat(last_record['end_time'])
-            # 如果上一条记录在24小时内，则接续；否则用当前时间
-            if (now - last_end).total_seconds() < 86400:
-                return last_end.time(), (last_end + datetime.timedelta(minutes=60)).time()
-        except:
-            pass
-    return now.time(), (now + datetime.timedelta(minutes=60)).time()
+# --- 回调函数：当用户输入活动名后触发 ---
+def on_episode_change():
+    val = st.session_state.episode_input
+    if not val: return
 
-default_start, default_end = get_default_times()
-
-# 五级分类默认选项
-HIERARCHY = {
-    "需求": ["个人生理", "个人发展", "家庭责任", "工作学习", "休闲娱乐", "交通出行"],
-    "企划": ["睡眠", "饮食", "健康", "职业工作", "家务", "照顾", "学习", "消遣", "运动"],
-    "活动": ["睡觉", "吃饭", "洗漱", "办公", "会议", "烹饪", "清洁", "阅读", "刷手机", "游戏", "坐车"],
-    "行为": ["躺卧", "坐姿", "站立", "行走", "操作", "交流"]
-}
+    # 1. 先查用户自定义模板 (优先级最高)
+    if val in st.session_state.templates:
+        t = st.session_state.templates[val]
+        st.session_state.auto_demand = t.get('demand')
+        st.session_state.auto_project = t.get('project')
+        st.session_state.auto_activity = t.get('activity')
+        st.session_state.auto_behavior = t.get('behavior')
+        st.session_state.match_source = "template"
+    
+    # 2. 再查常识库 (智能推荐)
+    elif val in KNOWLEDGE_BASE:
+        kb = KNOWLEDGE_BASE[val]
+        st.session_state.auto_demand = kb.get('demand')
+        st.session_state.auto_project = kb.get('project')
+        st.session_state.auto_activity = kb.get('activity')
+        st.session_state.auto_behavior = kb.get('behavior')
+        st.session_state.match_source = "smart"
+    
+    # 3. 没找到，默认选第一个，让用户自己改
+    else:
+        st.session_state.match_source = "new"
+        # 不覆盖，保留用户可能已经选的值
 
 # ==========================================
-# 3. 页面主体 (UI渲染)
+# 4. 界面渲染
 # ==========================================
 
-# 标题区
 st.markdown("""
-    <div style='margin: 10px 0 20px 0; text-align:center;'>
-        <div style='font-size:24px; font-weight:800; color:#1D1D1F;'>TimeLog</div>
-        <div style='font-size:13px; color:#86868B;'>时空行为轨迹记录</div>
+    <div style='text-align:center; margin-bottom:20px; padding-top:10px;'>
+        <div style='font-size:20px; font-weight:800;'>TimeLog</div>
+        <div style='font-size:12px; color:#888;'>智能时空记录</div>
     </div>
 """, unsafe_allow_html=True)
 
-# === 核心卡片：新建记录 ===
-# 用 HTML div 模拟卡片容器的开始
+# === 卡片 1: 活动内容 (智能分类) ===
 st.markdown('<div class="design-card">', unsafe_allow_html=True)
-st.markdown('<div class="card-title">✨ 新建记录 (New Entry)</div>', unsafe_allow_html=True)
+st.markdown('<div class="card-title">📝 活动内容 (ACTIVITY)</div>', unsafe_allow_html=True)
 
-# 1. 核心输入：做什么？
-episode_input = st.text_input("准备做什么？", placeholder="输入活动名称，如: 打羽毛球", label_visibility="collapsed")
+# 输入框：绑定回调函数
+st.text_input(
+    "要做什么？", 
+    placeholder="输入关键词，如: 睡觉、打羽毛球...", 
+    key="episode_input",
+    on_change=on_episode_change # 核心：输入完按回车，自动填分类
+)
 
-# 2. 动态逻辑：判断是否为老活动
-is_new = False
-template_data = {}
+# 获取匹配状态
+match_source = st.session_state.get("match_source", "new")
 
-if episode_input:
-    if episode_input in st.session_state.templates:
-        # === 情境 A: 老活动 (模板) ===
-        t = st.session_state.templates[episode_input]
-        template_data = t
-        st.markdown(f"""
-            <div style='margin-bottom: 15px; display:flex; align-items:center; justify-content:space-between; background:#F5F5F7; padding:10px; border-radius:10px;'>
-                <div>
-                    <span class="status-badge badge-exist">已识别模板</span>
-                    <span style='margin-left:8px; font-size:13px; font-weight:600; color:#333;'>{episode_input}</span>
-                </div>
-                <div style='font-size:12px; color:#666;'>
-                    {t['demand']} > {t['activity']}
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
-    else:
-        # === 情境 B: 新活动 (需补全) ===
-        is_new = True
-        st.markdown(f"""
-            <div style='margin-bottom: 15px;'>
-                <span class="status-badge badge-new">新活动</span>
-                <span style='font-size:13px; color:#666; margin-left:5px;'>请完善分类，下次自动记住</span>
-            </div>
-        """, unsafe_allow_html=True)
-        
-        # 只有新活动才显示这 4 个下拉框
-        c1, c2 = st.columns(2)
-        with c1:
-            demand = st.selectbox("需求", HIERARCHY["需求"], key="new_demand")
-            activity = st.selectbox("活动", HIERARCHY["活动"], key="new_activity")
-        with c2:
-            project = st.selectbox("企划", HIERARCHY["企划"], key="new_project")
-            behavior = st.selectbox("行为", HIERARCHY["行为"], key="new_behavior")
-        
-        template_data = {
-            "demand": demand, "project": project, 
-            "activity": activity, "behavior": behavior
-        }
+# 根据状态显示分类选择器
+if match_source == "template":
+    st.markdown(f"<div style='margin-top:10px;'><span class='smart-badge'>✨ 已自动匹配模板</span></div>", unsafe_allow_html=True)
+elif match_source == "smart":
+    st.markdown(f"<div style='margin-top:10px;'><span class='smart-badge'>🤖 智能推荐分类</span></div>", unsafe_allow_html=True)
+else:
+    if st.session_state.get("episode_input"):
+        st.caption("🆕 新活动：请手动选择一次，下次我就记住了")
 
-st.markdown('<hr style="border:none; height:1px; background:#F0F0F0; margin:15px 0;">', unsafe_allow_html=True)
+# 分类下拉框 (为了美观，使用 2x2 布局)
+# 使用 session_state 的值来定位 index
+def get_index(options, key_name):
+    val = st.session_state.get(key_name)
+    if val and val in options:
+        return options.index(val)
+    return 0
 
-# 3. 时间与地点 (每次都要确认，与模板无关)
-col_t1, col_t2 = st.columns(2)
-with col_t1:
-    st.caption("开始时间")
-    # value 设为动态计算的 default_start，但没有 key，允许修改
-    inp_start = st.time_input("Start", value=default_start, step=60, label_visibility="collapsed")
-with col_t2:
-    st.caption("结束时间")
-    inp_end = st.time_input("End", value=default_end, step=60, label_visibility="collapsed")
+c1, c2 = st.columns(2)
+with c1:
+    sel_demand = st.selectbox("需求", HIERARCHY["需求"], index=get_index(HIERARCHY["需求"], "auto_demand"), key="sel_demand")
+    sel_activity = st.selectbox("活动", HIERARCHY["活动"], index=get_index(HIERARCHY["活动"], "auto_activity"), key="sel_activity")
+with c2:
+    sel_project = st.selectbox("企划", HIERARCHY["企划"], index=get_index(HIERARCHY["企划"], "auto_project"), key="sel_project")
+    sel_behavior = st.selectbox("行为", HIERARCHY["行为"], index=get_index(HIERARCHY["行为"], "auto_behavior"), key="sel_behavior")
 
-inp_loc = st.text_input("地点", placeholder="📍 地点 (如: 体育馆)", label_visibility="collapsed")
+st.markdown('</div>', unsafe_allow_html=True)
 
-st.markdown('</div>', unsafe_allow_html=True) # 结束卡片
 
-# === 底部按钮 ===
+# === 卡片 2: 时间与地点 (完全自由) ===
+st.markdown('<div class="design-card">', unsafe_allow_html=True)
+st.markdown('<div class="card-title">⏱️ 时间 (TIME)</div>', unsafe_allow_html=True)
+
+# 智能计算默认时间 (仅作为初始值)
+if 'init_time' not in st.session_state:
+    now = datetime.datetime.now()
+    default_start = now.time()
+    # 尝试找上一条记录
+    if st.session_state.activities:
+        try:
+            last = st.session_state.activities[-1]
+            last_end = datetime.datetime.fromisoformat(last['end_time'])
+            if last_end.date() == datetime.date.today():
+                default_start = last_end.time()
+        except: pass
+    
+    st.session_state.start_val = default_start
+    st.session_state.end_val = (datetime.datetime.combine(datetime.date.today(), default_start) + datetime.timedelta(hours=1)).time()
+    st.session_state.init_time = True
+
+# 这里的 step=60 是为了在某些设备上允许输入分钟
+# 但在电脑上，你可以直接点开输入框，用键盘敲 "14:30"
+t1, t2 = st.columns(2)
+with t1:
+    st.caption("开始")
+    # 注意：不绑定 key，只给 value，这样不会被 Streamlit 强制重置
+    inp_start = st.time_input("Start", value=st.session_state.start_val, step=60, label_visibility="collapsed")
+with t2:
+    st.caption("结束")
+    inp_end = st.time_input("End", value=st.session_state.end_val, step=60, label_visibility="collapsed")
+
+st.markdown('<div class="card-title" style="margin-top:15px;">📍 地点 (LOCATION)</div>', unsafe_allow_html=True)
+inp_loc = st.text_input("地点", placeholder="在哪？(可选)", label_visibility="collapsed")
+
+st.markdown('</div>', unsafe_allow_html=True)
+
+# === 提交 ===
 if st.button("确认记录 (Save)"):
-    if not episode_input:
-        st.toast("⚠️ 请输入活动名称", icon="🤔")
+    episode_name = st.session_state.get("episode_input")
+    
+    if not episode_name:
+        st.toast("⚠️ 写点什么吧！", icon="🤔")
     else:
-        # 1. 保存模板 (如果是新的)
-        if is_new:
-            st.session_state.templates[episode_input] = template_data
-            save_json(TEMPLATES_FILE, st.session_state.templates)
+        # 1. 保存到用户模板 (如果是新词或修改了分类)
+        new_template = {
+            "demand": sel_demand, "project": sel_project, 
+            "activity": sel_activity, "behavior": sel_behavior
+        }
+        st.session_state.templates[episode_name] = new_template
+        save_json(TEMPLATES_FILE, st.session_state.templates)
         
-        # 2. 计算时间
+        # 2. 时间计算
         today = datetime.date.today()
         dt_start = datetime.datetime.combine(today, inp_start)
         dt_end = datetime.datetime.combine(today, inp_end)
-        
-        # 跨天逻辑
-        if dt_end < dt_start:
-            dt_end += datetime.timedelta(days=1)
-        
+        if dt_end < dt_start: dt_end += datetime.timedelta(days=1) # 跨天
         duration = int((dt_end - dt_start).total_seconds() / 60)
         
-        # 3. 保存记录
-        new_record = {
+        # 3. 保存
+        record = {
             "id": int(time.time()),
-            "episode": episode_input,
+            "episode": episode_name,
             "start_time": dt_start.isoformat(),
             "end_time": dt_end.isoformat(),
             "duration": duration,
             "location": inp_loc,
-            # 展开保存完整的五级分类
-            "demand": template_data.get("demand"),
-            "project": template_data.get("project"),
-            "activity": template_data.get("activity"),
-            "behavior": template_data.get("behavior"),
+            **new_template, # 展开 5级分类
             "created_at": datetime.datetime.now().isoformat()
         }
-        
-        st.session_state.activities.append(new_record)
+        st.session_state.activities.append(record)
         st.session_state.activities.sort(key=lambda x: x['start_time'])
         save_json(ACTIVITIES_FILE, st.session_state.activities)
         
-        st.toast(f"✅ 已记录: {episode_input}", icon="🎉")
+        # 4. 更新下次的默认时间
+        st.session_state.start_val = dt_end.time()
+        st.session_state.end_val = (dt_end + datetime.timedelta(hours=1)).time()
+        
+        st.toast(f"✅ 已记录: {episode_name}", icon="🎉")
         time.sleep(0.5)
         st.rerun()
 
-# === 历史记录卡片 ===
+# === 历史列表 ===
 if st.session_state.activities:
-    st.markdown('<div class="design-card">', unsafe_allow_html=True)
-    st.markdown('<div class="card-title">📅 今日时间轴 (Today)</div>', unsafe_allow_html=True)
+    st.markdown('<div style="margin:20px 0 10px 0; font-size:14px; color:#888; font-weight:bold;">📅 今日记录</div>', unsafe_allow_html=True)
     
-    # 获取今日数据
     today_str = datetime.date.today().isoformat()
     today_acts = [a for a in st.session_state.activities if a['start_time'].startswith(today_str)]
     
-    if not today_acts:
-        st.info("今天还没有记录，开始新的一天吧！")
-    else:
-        # 倒序显示
-        for act in reversed(today_acts):
-            s = datetime.datetime.fromisoformat(act['start_time']).strftime('%H:%M')
-            e = datetime.datetime.fromisoformat(act['end_time']).strftime('%H:%M')
-            
-            st.markdown(f"""
-            <div class="history-row">
-                <div style="display:flex; flex-direction:column;">
-                    <span style="font-size:15px; font-weight:700; color:#1D1D1F;">{act['episode']}</span>
-                    <span style="font-size:12px; color:#86868B; margin-top:2px;">
+    for act in reversed(today_acts):
+        s = datetime.datetime.fromisoformat(act['start_time']).strftime('%H:%M')
+        e = datetime.datetime.fromisoformat(act['end_time']).strftime('%H:%M')
+        
+        st.markdown(f"""
+        <div class="design-card" style="padding:15px; margin-bottom:10px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                    <div style="font-weight:800; font-size:16px; color:#1d1d1f;">{act['episode']}</div>
+                    <div style="font-size:12px; color:#86868b; margin-top:4px;">
                         {s} - {e} · {act['duration']} min
-                    </span>
+                    </div>
                 </div>
                 <div style="text-align:right;">
-                    <span style="font-size:12px; background:#F0F0F0; color:#666; padding:3px 8px; border-radius:6px;">
-                        {act.get('location', '')}
+                     <span style="font-size:11px; background:#F2F2F7; color:#666; padding:4px 8px; border-radius:6px;">
+                        {act['demand']}
                     </span>
                 </div>
             </div>
-            """, unsafe_allow_html=True)
-            
-            # 删除逻辑 (为了美观，用 Streamlit 原生按钮放下面，或者用 col)
-            # 这里为了保持卡片纯洁，不放删除按钮，如需删除请在电脑端管理
-    
-    st.markdown('</div>', unsafe_allow_html=True)
+        </div>
+        """, unsafe_allow_html=True)
