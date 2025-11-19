@@ -1,489 +1,400 @@
 # app.py
 import streamlit as st
-import pandas as pd
 import json
 import datetime
 from datetime import timedelta
-import folium
-from streamlit_folium import st_folium
-import plotly.express as px
 import os
 import time
-from geopy.geocoders import Nominatim
-from collections import Counter
+import pandas as pd
 
-# 1. 页面配置 - 修改：默认收起侧边栏，适配移动端
+# ==========================================
+# 1. 配置与样式 (UI/UX 核心优化)
+# ==========================================
 st.set_page_config(
-    page_title="个人活动轨迹日志",
-    page_icon="🛤️",
+    page_title="时空轨迹日志",
+    page_icon="🕰️",
     layout="wide",
-    initial_sidebar_state="collapsed" # 手机端默认收起
+    initial_sidebar_state="collapsed"
 )
 
-# 数据存储路径
+# 定义色彩系统 (莫兰迪色系/Notion风格)
+COLORS = {
+    "个人": "#FFD700",   # 金色
+    "工作": "#4169E1",   # 皇家蓝
+    "交通": "#20B2AA",   # 浅海洋绿
+    "社交": "#FF69B4",   # 亮粉
+    "Gap":  "#E0E0E0",   # 灰色(空缺)
+    "Bg":   "#F7F9FC"    # 背景色
+}
+
+# 注入自定义 CSS
+st.markdown(f"""
+<style>
+    /* 全局背景 */
+    .stApp {{
+        background-color: {COLORS['Bg']};
+    }}
+    
+    /* 隐藏顶部 Hamburger 菜单和 Footer (让界面更像 App) */
+    #MainMenu {{visibility: hidden;}}
+    footer {{visibility: hidden;}}
+    
+    /* 标题样式 */
+    .main-title {{
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #333;
+        margin-bottom: 0.5rem;
+        padding-left: 0.5rem;
+        border-left: 5px solid #1f77b4;
+    }}
+    
+    /* 卡片容器样式 */
+    .card-container {{
+        background-color: white;
+        padding: 15px;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        margin-bottom: 15px;
+    }}
+    
+    /* 移动端时间轴样式 */
+    .timeline-wrapper {{
+        width: 100%;
+        height: 24px;
+        background-color: #eee;
+        border-radius: 12px;
+        display: flex;
+        overflow: hidden;
+        margin-bottom: 10px;
+        border: 1px solid #ddd;
+    }}
+    .timeline-segment {{
+        height: 100%;
+        transition: all 0.3s;
+    }}
+    
+    /* 优化输入框在手机上的点击体验 */
+    .stSelectbox, .stTextInput, .stTimeInput {{
+        margin-bottom: 5px;
+    }}
+    div[data-baseweb="select"] > div {{
+        background-color: #fff;
+        border-radius: 8px;
+    }}
+    
+    /* 大按钮样式 */
+    .big-btn button {{
+        width: 100%;
+        height: 50px !important;
+        border-radius: 10px !important;
+        font-weight: bold !important;
+        font-size: 16px !important;
+        background-color: #1f77b4 !important;
+        color: white !important;
+        border: none !important;
+        box-shadow: 0 4px 6px rgba(31, 119, 180, 0.3);
+    }}
+    .big-btn button:active {{
+        transform: scale(0.98);
+    }}
+</style>
+""", unsafe_allow_html=True)
+
+# ==========================================
+# 2. 数据管理 (Data Handling)
+# ==========================================
 DATA_DIR = "data"
 ACTIVITIES_FILE = os.path.join(DATA_DIR, "activities.json")
-CLASSIFICATION_FILE = os.path.join(DATA_DIR, "classification_system.json")
-LOCATION_TEMPLATES_FILE = os.path.join(DATA_DIR, "location_templates.json")
-ACTIVITY_TEMPLATES_FILE = os.path.join(DATA_DIR, "activity_templates.json")
-
-# 确保数据目录存在
+TEMPLATES_FILE = os.path.join(DATA_DIR, "templates.json")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-# --- 基础工具函数 (保持不变) ---
-def load_json_file(file_path, default_data):
-    try:
-        if os.path.exists(file_path):
-            with open(file_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-    except Exception as e:
-        st.error(f"加载文件 {file_path} 时出错: {e}")
-    return default_data
+def load_data(file, default):
+    if os.path.exists(file):
+        with open(file, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return default
 
-def save_json_file(file_path, data):
-    try:
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        return True
-    except Exception as e:
-        st.error(f"保存文件 {file_path} 时出错: {e}")
-        return False
+def save_data(file, data):
+    with open(file, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
-def initialize_data():
-    if 'activities' not in st.session_state:
-        st.session_state.activities = load_json_file(ACTIVITIES_FILE, [])
-    
-    # 默认分类系统 (精简版，防止代码过长)
-    default_classification_system = {
-        "个人": {
-            "个人生理": {"睡觉休息": {"睡觉": ["夜间睡眠", "午睡"], "休息": ["放松"]}, "进食": {"用餐": ["早餐", "午餐", "晚餐"]}},
-            "个人休闲": {"娱乐消遣": {"看电视": ["追剧"], "游戏": ["手游"]}, "运动锻炼": {"健身": ["跑步"]}}
-        },
-        "工作": {"职业工作": {"办公": {"日常办公": ["开会", "写代码", "文档处理"]}}}
+# 初始化 Session State
+if 'activities' not in st.session_state:
+    st.session_state.activities = load_data(ACTIVITIES_FILE, [])
+    # 确保按时间排序
+    st.session_state.activities.sort(key=lambda x: x['start_time'])
+
+if 'templates' not in st.session_state:
+    # 默认模板：Emoji + 名称 + 默认分类
+    defaults = {
+        "😴 睡觉": {"cat": "个人", "loc": "家"},
+        "🚇 通勤": {"cat": "交通", "loc": "移动中"},
+        "💻 工作": {"cat": "工作", "loc": "公司"},
+        "🍱 吃饭": {"cat": "个人", "loc": "餐厅"},
+        "📱 玩手机": {"cat": "个人", "loc": "家"}
     }
-    
-    if 'classification_system' not in st.session_state:
-        st.session_state.classification_system = load_json_file(CLASSIFICATION_FILE, default_classification_system)
-    
-    default_location_templates = {
-        "家": {"category": "居住场所", "tag": "家", "name": "家", "coordinates": None},
-        "公司": {"category": "工作场所", "tag": "公司", "name": "办公室", "coordinates": None}
-    }
-    
-    if 'location_templates' not in st.session_state:
-        st.session_state.location_templates = load_json_file(LOCATION_TEMPLATES_FILE, default_location_templates)
-    
-    if 'activity_templates' not in st.session_state:
-        st.session_state.activity_templates = load_json_file(ACTIVITY_TEMPLATES_FILE, {})
-    
-    if 'map_center' not in st.session_state:
-        st.session_state.map_center = [39.9042, 116.4074]
+    st.session_state.templates = load_data(TEMPLATES_FILE, defaults)
 
-def save_all_data():
-    save_json_file(ACTIVITIES_FILE, st.session_state.activities)
-    save_json_file(CLASSIFICATION_FILE, st.session_state.classification_system)
-    save_json_file(LOCATION_TEMPLATES_FILE, st.session_state.location_templates)
-    save_json_file(ACTIVITY_TEMPLATES_FILE, st.session_state.activity_templates)
+# ==========================================
+# 3. 核心组件函数
+# ==========================================
 
-def search_location(query):
-    try:
-        geolocator = Nominatim(user_agent="personal_activity_tracker_mobile")
-        location = geolocator.geocode(query, addressdetails=True, country_codes='cn')
-        if location:
-            return {"name": location.address, "lat": location.latitude, "lng": location.longitude}
-    except:
-        return None
-    return None
-
-def get_all_episodes():
-    episodes = []
-    for demand, projects in st.session_state.classification_system.items():
-        for project, activities in projects.items():
-            for activity, behavior_dict in activities.items():
-                for behavior, episode_list in behavior_dict.items():
-                    for episode in episode_list:
-                        episodes.append({
-                            "demand": demand, "project": project, "activity": activity,
-                            "behavior": behavior, "episode": episode
-                        })
-    return episodes
-
-# --- 2. 样式配置 - 修改：增加移动端触摸优化 ---
-def apply_custom_css():
-    st.markdown("""
-    <style>
-    /* 移动端大标题 */
-    .main-header { font-size: 1.8rem; color: #1f77b4; text-align: center; margin-bottom: 1rem; font-weight: bold; }
-    .sub-header { font-size: 1.3rem; color: #2e86ab; margin: 1rem 0; border-bottom: 2px solid #f0f2f6; }
+def render_24h_timeline():
+    """渲染顶部的 24 小时多彩时间条"""
+    today = datetime.date.today().isoformat()
+    today_acts = [a for a in st.session_state.activities if a['start_time'].startswith(today)]
     
-    /* 卡片样式 */
-    .activity-card {
-        background-color: #f8f9fa; padding: 0.8rem; border-radius: 8px;
-        border-left: 4px solid #1f77b4; margin-bottom: 0.8rem;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-    }
+    # 计算 HTML 片段
+    segments = []
+    last_end_min = 0
     
-    /* 移动端按钮优化：增大点击区域 */
-    .stButton button {
-        width: 100%;
-        border-radius: 8px;
-        height: 3.5rem !important; /* 增加高度方便手指点击 */
-        font-weight: bold;
-    }
+    sorted_acts = sorted(today_acts, key=lambda x: x['start_time'])
     
-    /* 调整Tabs样式 */
-    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
-    .stTabs [data-baseweb="tab"] { height: 50px; flex: 1; white-space: pre-wrap; }
-    </style>
-    """, unsafe_allow_html=True)
-
-# --- 3. 智能地图组件 ---
-def smart_map_selector():
-    # 简化版地图逻辑
-    search_query = st.text_input("🔍 搜索地点", key="loc_search_mobile")
-    if search_query:
-        res = search_location(search_query)
-        if res:
-            st.session_state.map_center = [res['lat'], res['lng']]
-            st.success(f"已定位: {res['name']}")
-            return {"lat": res['lat'], "lng": res['lng']}, res
-            
-    m = folium.Map(location=st.session_state.map_center, zoom_start=13)
-    map_data = st_folium(m, height=300, width="100%", key="smart_map_mobile")
-    
-    if map_data and map_data.get("last_clicked"):
-        lat = map_data["last_clicked"]["lat"]
-        lng = map_data["last_clicked"]["lng"]
-        return {"lat": lat, "lng": lng}, None
-    return None, None
-
-# --- 4. 核心逻辑：活动记录表单 (重构版) ---
-def activity_form():
-    st.markdown('<div class="sub-header">📝 记录活动</div>', unsafe_allow_html=True)
-    
-    # 将界面分为手机版和电脑版
-    tab_mobile, tab_desktop = st.tabs(["📱 手机极简模式", "💻 电脑完整模式"])
-    
-    # ====== 📱 手机极简模式 ======
-    with tab_mobile:
-        # 1. 一键打卡区
-        st.markdown("**⚡ 一键记录 (基于模板)**")
-        templates = list(st.session_state.activity_templates.items())
+    for act in sorted_acts:
+        start_dt = datetime.datetime.fromisoformat(act['start_time'])
+        end_dt = datetime.datetime.fromisoformat(act['end_time'])
         
-        if not templates:
-            st.info("👋 暂无模板！请先在'完整模式'录入一次并保存为模板，或在'活动模板'中添加。")
+        # 转换为当天的分钟数 (0-1440)
+        start_min = start_dt.hour * 60 + start_dt.minute
+        end_min = end_dt.hour * 60 + end_dt.minute
+        
+        # 1. 处理空隙 (Gap)
+        if start_min > last_end_min:
+            gap_width = ((start_min - last_end_min) / 1440) * 100
+            segments.append(f'<div class="timeline-segment" style="width:{gap_width}%; background-color:{COLORS["Gap"]};" title="空缺"></div>')
+            
+        # 2. 处理活动
+        width = ((end_min - start_min) / 1440) * 100
+        # 根据分类简单配色
+        color = COLORS.get("个人", "#ccc")
+        if "工作" in act.get('description', '') or "工作" in act.get('episode', ''): color = COLORS["工作"]
+        elif "通勤" in act.get('episode', ''): color = COLORS["交通"]
+        
+        segments.append(f'<div class="timeline-segment" style="width:{width}%; background-color:{color};" title="{act["episode"]}"></div>')
+        last_end_min = end_min
+        
+    # 处理剩余时间
+    if last_end_min < 1440:
+        rem_width = ((1440 - last_end_min) / 1440) * 100
+        segments.append(f'<div class="timeline-segment" style="width:{rem_width}%; background-color:{COLORS["Gap"]}; opacity: 0.5;" title="剩余时间"></div>')
+        
+    html = f"""
+    <div style="margin-bottom:5px; font-size:12px; color:#666; display:flex; justify-content:space-between;">
+        <span>00:00</span><span>今日时间轴</span><span>24:00</span>
+    </div>
+    <div class="timeline-wrapper">
+        {''.join(segments)}
+    </div>
+    """
+    st.markdown(html, unsafe_allow_html=True)
+
+def mobile_input_form():
+    """手机端极简输入表单"""
+    
+    # 1. 顶部显示 24H 状态
+    with st.container():
+        st.markdown('<div class="main-title">📅 今日轨迹</div>', unsafe_allow_html=True)
+        render_24h_timeline()
+
+    # 2. 计算智能默认时间
+    now = datetime.datetime.now()
+    default_start = now
+    default_end = now
+    
+    # 查找今日最后一条记录
+    if st.session_state.activities:
+        last_act = st.session_state.activities[-1]
+        last_end = datetime.datetime.fromisoformat(last_act['end_time'])
+        
+        # 如果最后一条记录是今天(或者昨天很晚)，且不是未来时间，则开始时间自动接续
+        if last_end <= now:
+            default_start = last_end
         else:
-            # 自动计算时间：从上一个活动结束开始，到当前时间结束
-            last_end_time = datetime.datetime.now()
-            if st.session_state.activities:
-                last_end_time = datetime.datetime.fromisoformat(st.session_state.activities[-1]["end_time"])
-            
-            current_time = datetime.datetime.now()
-            
-            # 如果上个活动结束时间在未来(修正错误数据)，或者间隔太久(超过12小时)，就默认当前时间往前推30分钟
-            if last_end_time > current_time or (current_time - last_end_time).total_seconds() > 43200:
-                start_time_proposal = current_time - timedelta(minutes=30)
-                is_continuation = False
-            else:
-                start_time_proposal = last_end_time
-                is_continuation = True
-
-            duration_proposal = int((current_time - start_time_proposal).total_seconds() / 60)
-            if duration_proposal < 1: duration_proposal = 1
-
-            # 网格布局按钮
-            cols = st.columns(3)
-            for idx, (name, temp_data) in enumerate(templates):
-                with cols[idx % 3]:
-                    # 按钮显示：模板名
-                    if st.button(f"{name}", key=f"mob_btn_{idx}", use_container_width=True):
-                        # 构建数据
-                        new_activity = {
-                            "id": len(st.session_state.activities) + 1,
-                            "start_time": start_time_proposal.isoformat(),
-                            "end_time": current_time.isoformat(),
-                            "duration": duration_proposal,
-                            "location_category": "快速记录", 
-                            "location_tag": "移动端", 
-                            "location_name": "一键打卡",
-                            "coordinates": None,
-                            "demand": temp_data.get("demand", ""),
-                            "project": temp_data.get("project", ""),
-                            "activity": temp_data.get("activity", ""),
-                            "behavior": temp_data.get("behavior", ""),
-                            "episode": name,
-                            "description": "通过手机一键打卡记录",
-                            "created_at": datetime.datetime.now().isoformat()
-                        }
-                        st.session_state.activities.append(new_activity)
-                        save_all_data()
-                        # 使用 Toast 提示
-                        msg = f"✅ 已记录: {name} ({duration_proposal}分钟)"
-                        st.toast(msg, icon="🎉")
-                        time.sleep(1)
-                        st.rerun()
-            
-            if is_continuation:
-                st.caption(f"🕒 默认接续上个活动，从 {start_time_proposal.strftime('%H:%M')} 开始")
-            else:
-                st.caption("🕒 间隔过久，默认记录过去30分钟")
-
-        st.markdown("---")
+            # 如果最后一条记录在未来(比如误操作)，默认当前时间
+            default_start = now
+    
+    # 3. 卡片式表单区域
+    st.markdown('<div class="card-container">', unsafe_allow_html=True)
+    
+    # === 时间控制区 (左右布局) ===
+    st.caption("⏱️ 时间设定")
+    col_t1, col_t2 = st.columns(2)
+    with col_t1:
+        # Streamlit 的 time_input 默认步长 15分钟，step=60 可以精确到分
+        input_start_time = st.time_input("开始", value=default_start.time(), step=60)
+    with col_t2:
+        # 结束时间默认为当前
+        input_end_time = st.time_input("结束", value=default_end.time(), step=60)
         
-        # 2. 手动快速录入 (非模板)
-        st.markdown("**✏️ 快速补录**")
-        with st.form("mobile_quick_form"):
-            # 选择行为
-            all_eps = [e["episode"] for e in get_all_episodes()]
-            m_episode = st.selectbox("做什么?", [""] + all_eps)
-            
-            # 时间选择 (简化为时长)
-            m_duration = st.slider("持续时长 (分钟)", 5, 240, 60, step=5)
-            
-            # 地点选择
-            loc_opts = [""] + list(st.session_state.location_templates.keys())
-            m_location = st.selectbox("在哪?", loc_opts)
-            
-            m_submit = st.form_submit_button("提交记录")
-            
-            if m_submit and m_episode:
-                # 查找完整分类
-                full_cls = None
-                for e in get_all_episodes():
-                    if e["episode"] == m_episode:
-                        full_cls = e
-                        break
-                
-                # 计算时间
-                m_end = datetime.datetime.now()
-                m_start = m_end - timedelta(minutes=m_duration)
-                
-                # 地点信息
-                loc_cat, loc_tag, loc_name = "移动端", "手动", "未知"
-                if m_location and m_location in st.session_state.location_templates:
-                    lt = st.session_state.location_templates[m_location]
-                    loc_cat, loc_tag, loc_name = lt["category"], lt["tag"], lt["name"]
-                
-                act = {
-                    "id": len(st.session_state.activities) + 1,
-                    "start_time": m_start.isoformat(),
-                    "end_time": m_end.isoformat(),
-                    "duration": m_duration,
-                    "location_category": loc_cat,
-                    "location_tag": loc_tag,
-                    "location_name": loc_name,
-                    "coordinates": None,
-                    "demand": full_cls["demand"] if full_cls else "",
-                    "project": full_cls["project"] if full_cls else "",
-                    "activity": full_cls["activity"] if full_cls else "",
-                    "behavior": full_cls["behavior"] if full_cls else "",
-                    "episode": m_episode,
-                    "description": "手机快速补录",
-                    "created_at": datetime.datetime.now().isoformat()
-                }
-                st.session_state.activities.append(act)
-                
-                # 自动保存为模板以便下次一键使用
-                if m_episode not in st.session_state.activity_templates and full_cls:
-                    st.session_state.activity_templates[m_episode] = full_cls
-                    st.toast(f"✨ 已自动将 '{m_episode}' 加入常用模板")
-                
-                save_all_data()
-                st.toast("✅ 补录成功!")
-                time.sleep(1)
-                st.rerun()
-
-    # ====== 💻 电脑完整模式 (保留原有的精细操作) ======
-    with tab_desktop:
-        # 初始化时间
-        if 'start_datetime' not in st.session_state:
-            st.session_state.start_datetime = datetime.datetime.now()
-        if 'end_datetime' not in st.session_state:
-            st.session_state.end_datetime = datetime.datetime.now() + timedelta(hours=1)
-            
-        # 地图选择
-        coordinates, searched_location = smart_map_selector()
+    # === 内容控制区 ===
+    st.caption("📝 活动内容")
+    
+    # 模板快速选择 (Pills 样式模拟)
+    template_names = list(st.session_state.templates.keys())
+    selected_template = st.selectbox("选择常见活动 (或直接输入)", [""] + template_names)
+    
+    # 如果选了模板，自动填入地点；没选则允许手动
+    default_loc = ""
+    default_desc = ""
+    if selected_template:
+        t_data = st.session_state.templates[selected_template]
+        default_loc = t_data['loc']
+        default_desc = selected_template
+    
+    col_c1, col_c2 = st.columns([2, 1])
+    with col_c1:
+        # 如果用户想自定义，可以在 selectbox 选空然后下面自己写，或者直接覆盖
+        # 这里为了手机方便，直接用 Text Input，如果选了模板会覆盖 Value
+        # 注意：Streamlit 更新 Input value 需要用 key session state
         
-        with st.form(key="activity_form_desktop"):
-            col1, col2 = st.columns(2)
-            with col1:
-                d_start = st.time_input("开始时间", st.session_state.start_datetime.time())
-                d_start_date = st.date_input("开始日期", st.session_state.start_datetime.date())
-            with col2:
-                d_end = st.time_input("结束时间", st.session_state.end_datetime.time())
-                d_end_date = st.date_input("结束日期", st.session_state.end_datetime.date())
+        # 这里做一个简单处理：如果选了模板，episode 就是模板名
+        # 如果没选，提供一个输入框
+        episode_input = st.text_input("活动名称", value=selected_template.split(" ")[-1] if selected_template else "", placeholder="例如: 喝咖啡")
+        
+    with col_c2:
+        location_input = st.text_input("地点", value=default_loc, placeholder="例如: 公司")
+        
+    st.markdown('</div>', unsafe_allow_html=True) # End card
+    
+    # === 提交按钮 ===
+    # 计算时长用于显示
+    # 注意：这里只是静态显示，不会随上面时间变化实时变(除非rerun)，但提交时会准确计算
+    submit_container = st.container()
+    with submit_container:
+        st.markdown('<div class="big-btn">', unsafe_allow_html=True)
+        submitted = st.button("✅ 确认记录")
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    # === 处理提交逻辑 ===
+    if submitted:
+        # 1. 构建完整的 datetime
+        today_date = datetime.date.today()
+        dt_start = datetime.datetime.combine(today_date, input_start_time)
+        dt_end = datetime.datetime.combine(today_date, input_end_time)
+        
+        # 跨天处理：如果结束时间 小于 开始时间，说明跨天了(或者是第二天凌晨)
+        # 这里简单处理：假设是跨到第二天
+        if dt_end < dt_start:
+            dt_end += timedelta(days=1)
             
-            # 合并时间
-            dt_start = datetime.datetime.combine(d_start_date, d_start)
-            dt_end = datetime.datetime.combine(d_end_date, d_end)
+        duration = int((dt_end - dt_start).total_seconds() / 60)
+        
+        if duration <= 0:
+            st.error("⚠️ 结束时间必须晚于开始时间")
+        elif not episode_input:
+            st.error("⚠️ 请填写活动名称")
+        else:
+            # 保存数据
+            new_act = {
+                "id": int(time.time()),
+                "start_time": dt_start.isoformat(),
+                "end_time": dt_end.isoformat(),
+                "duration": duration,
+                "episode": episode_input,
+                "location_name": location_input,
+                "description": selected_template, # 存一下原始模板名作为分类参考
+                "created_at": datetime.datetime.now().isoformat()
+            }
             
-            # 地点
-            st.markdown("**📍 地点**")
-            l_temp = st.selectbox("地点模板", [""] + list(st.session_state.location_templates.keys()))
-            l_name_input = st.text_input("或手动输入地点名称", value=searched_location['name'] if searched_location else "")
+            st.session_state.activities.append(new_act)
+            # 重新排序
+            st.session_state.activities.sort(key=lambda x: x['start_time'])
+            save_data(ACTIVITIES_FILE, st.session_state.activities)
             
-            # 活动
-            st.markdown("**🏷️ 内容**")
-            all_episodes_list = [e["episode"] for e in get_all_episodes()]
-            selected_ep = st.selectbox("行为片段", [""] + all_episodes_list)
-            desc = st.text_area("备注")
-            
-            submitted = st.form_submit_button("✅ 添加详细记录", use_container_width=True)
-            
-            if submitted and selected_ep:
-                # 处理地点
-                l_cat, l_tag, l_name = "其他", "自定义", l_name_input
-                if l_temp:
-                    t = st.session_state.location_templates[l_temp]
-                    l_cat, l_tag, l_name = t["category"], t["tag"], t["name"]
-                
-                # 处理分类
-                cls_data = {}
-                for e in get_all_episodes():
-                    if e["episode"] == selected_ep:
-                        cls_data = e
-                        break
-                
-                duration = int((dt_end - dt_start).total_seconds() / 60)
-                
-                act = {
-                    "id": len(st.session_state.activities) + 1,
-                    "start_time": dt_start.isoformat(),
-                    "end_time": dt_end.isoformat(),
-                    "duration": duration,
-                    "location_category": l_cat,
-                    "location_tag": l_tag,
-                    "location_name": l_name,
-                    "coordinates": coordinates,
-                    "demand": cls_data.get("demand", ""),
-                    "project": cls_data.get("project", ""),
-                    "activity": cls_data.get("activity", ""),
-                    "behavior": cls_data.get("behavior", ""),
-                    "episode": selected_ep,
-                    "description": desc,
-                    "created_at": datetime.datetime.now().isoformat()
-                }
-                st.session_state.activities.append(act)
-                save_all_data()
-                st.success("记录添加成功")
-                st.rerun()
+            st.success(f"已记录: {episode_input} ({duration}分钟)")
+            time.sleep(0.5)
+            st.rerun()
 
-# --- 5. 数据展示 (适配移动端) ---
-def data_overview():
-    st.markdown('<div class="sub-header">📊 数据概览</div>', unsafe_allow_html=True)
+def timeline_list_view():
+    """下方的详细列表视图"""
+    st.markdown("### 📜 详细记录")
+    
     if not st.session_state.activities:
-        st.info("暂无数据")
+        st.info("今天还没有记录哦，快去添加吧！")
         return
 
-    # 关键指标卡片 - 移动端用两列显示
-    df = pd.DataFrame(st.session_state.activities)
-    total_time = df['duration'].sum() / 60
-    today = datetime.date.today()
-    today_acts = [a for a in st.session_state.activities if a['start_time'].startswith(today.isoformat())]
-    
-    c1, c2 = st.columns(2)
-    with c1:
-        st.metric("总时长 (小时)", f"{total_time:.1f}")
-    with c2:
-        st.metric("今日活动 (个)", len(today_acts))
+    # 按倒序显示，最近的在最上面
+    for i, act in enumerate(reversed(st.session_state.activities)):
+        start = datetime.datetime.fromisoformat(act['start_time'])
+        end = datetime.datetime.fromisoformat(act['end_time'])
         
-    # 图表：只显示一个最重要的饼图
-    st.markdown("### 活动分布")
-    if not df.empty:
-        fig = px.pie(df, names='demand', values='duration', title='需求类型分布', hole=0.4)
-        fig.update_layout(margin=dict(t=30, b=0, l=0, r=0), height=300)
-        st.plotly_chart(fig, use_container_width=True)
-
-    # 列表：最近5条记录
-    st.markdown("### 🕒 最近记录")
-    for a in reversed(st.session_state.activities[-5:]):
-        start = datetime.datetime.fromisoformat(a['start_time']).strftime('%H:%M')
-        end = datetime.datetime.fromisoformat(a['end_time']).strftime('%H:%M')
-        st.info(f"**{a['episode']}** | {start}-{end} | {a['duration']}分钟")
-
-# --- 6. 其他管理功能 (保持精简) ---
-def template_management():
-    st.markdown('<div class="sub-header">📋 模板管理</div>', unsafe_allow_html=True)
-    st.caption("在这里添加的模板会出现在'手机极简模式'的快捷按钮中。")
-    
-    # 简单的添加模板表单
-    with st.form("add_temp"):
-        new_ep = st.text_input("行为名称 (如: 坐地铁)")
-        c1, c2 = st.columns(2)
-        with c1: demand = st.text_input("需求 (如: 个人)")
-        with c2: project = st.text_input("企划 (如: 交通)")
-        submit = st.form_submit_button("添加模板", use_container_width=True)
+        # 卡片样式
+        st.markdown(f"""
+        <div style="background:white; padding:12px; border-radius:8px; border-left:4px solid #1f77b4; margin-bottom:10px; box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div style="font-weight:bold; font-size:16px;">{act['episode']}</div>
+                <div style="color:#888; font-size:14px;">{act['duration']} min</div>
+            </div>
+            <div style="display:flex; justify-content:space-between; margin-top:5px; color:#666; font-size:14px;">
+                <span>🕒 {start.strftime('%H:%M')} - {end.strftime('%H:%M')}</span>
+                <span>📍 {act.get('location_name', '未知')}</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
         
-        if submit and new_ep:
-            st.session_state.activity_templates[new_ep] = {
-                "demand": demand, "project": project, "activity": "移动", "behavior": "乘坐", "episode": new_ep
-            }
-            save_all_data()
-            st.success(f"模板 {new_ep} 已添加")
-            st.rerun()
-            
-    # 删除模板
-    if st.session_state.activity_templates:
-        st.write("现有模板 (点击删除):")
-        for name in list(st.session_state.activity_templates.keys()):
-            if st.button(f"🗑️ {name}", key=f"del_{name}"):
-                del st.session_state.activity_templates[name]
-                save_all_data()
+        # 删除按钮 (为了美观放这里，虽然有点破坏纯HTML感，但必须要有交互)
+        col_del, col_empty = st.columns([1, 5])
+        with col_del:
+            if st.button("🗑️", key=f"del_{act['id']}", help="删除此条"):
+                st.session_state.activities = [a for a in st.session_state.activities if a['id'] != act['id']]
+                save_data(ACTIVITIES_FILE, st.session_state.activities)
                 st.rerun()
 
-def activity_list_view():
-    st.markdown('<div class="sub-header">📋 历史记录</div>', unsafe_allow_html=True)
-    if st.session_state.activities:
-        if st.button("🗑️ 删除最后一条记录", type="secondary", use_container_width=True):
-            st.session_state.activities.pop()
-            save_all_data()
-            st.rerun()
-            
-        for a in reversed(st.session_state.activities):
-            with st.expander(f"{a['start_time'][5:16].replace('T', ' ')} - {a['episode']}"):
-                st.write(f"时长: {a['duration']}分钟")
-                st.write(f"地点: {a['location_name']}")
-                st.write(f"分类: {a['demand']}>{a['project']}")
-                if st.button("删除此条", key=f"del_act_{a['id']}"):
-                    st.session_state.activities = [x for x in st.session_state.activities if x['id'] != a['id']]
-                    save_all_data()
-                    st.rerun()
+# ==========================================
+# 4. 统计面板 (简易版)
+# ==========================================
+def stats_view():
+    st.markdown('<div class="main-title">📊 数据统计</div>', unsafe_allow_html=True)
+    
+    if not st.session_state.activities:
+        st.write("暂无数据")
+        return
+        
+    df = pd.DataFrame(st.session_state.activities)
+    df['start_dt'] = pd.to_datetime(df['start_time'])
+    df['date'] = df['start_dt'].dt.date
+    
+    # 今日概览
+    today = datetime.date.today()
+    today_df = df[df['date'] == today]
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("今日活动数", len(today_df))
+    with col2:
+        total_min = today_df['duration'].sum()
+        st.metric("记录时长", f"{total_min/60:.1f}小时")
+    with col3:
+        gap = 1440 - total_min
+        st.metric("未记录(空缺)", f"{gap/60:.1f}小时", delta_color="inverse")
+        
+    st.markdown("---")
+    st.caption("💡 提示：保持记录连续性可以获得更准确的时空分析。")
 
-# --- 主程序 ---
+# ==========================================
+# 5. 主程序入口
+# ==========================================
 def main():
-    initialize_data()
-    apply_custom_css()
-    
-    # 手机端简化标题
-    st.markdown('<div class="main-header">🛤️ 轨迹日志</div>', unsafe_allow_html=True)
-    
-    # 底部导航栏 (使用 selectbox 模拟移动端底部 Tab 切换)
-    menu_options = ["📝 记录", "📊 概览", "📋 历史", "⚙️ 模板"]
-    # 使用 icons 让菜单更直观
-    selected = st.sidebar.radio("导航", menu_options)
-    
-    # 手机端如果不展开 Sidebar，看不到菜单，所以在主界面顶部放一个横向选择
-    # 为了美观，我们只在 Sidebar 收起时主要依赖这个
-    page = st.selectbox("切换功能", menu_options, label_visibility="collapsed")
-    
-    if "记录" in page:
-        activity_form()
-    elif "概览" in page:
-        data_overview()
-    elif "历史" in page:
-        activity_list_view()
-    elif "模板" in page:
-        template_management()
-    
-    # 侧边栏额外功能
+    # 侧边栏导航
     with st.sidebar:
+        st.title("功能菜单")
+        page = st.radio("前往", ["📝 记录", "📊 统计", "⚙️ 设置"])
         st.markdown("---")
-        if st.button("📥 导出数据"):
-            st.download_button("下载 JSON", json.dumps(st.session_state.activities, indent=2, ensure_ascii=False), "data.json")
         if st.button("🗑️ 清空所有数据"):
             st.session_state.activities = []
-            save_all_data()
+            save_data(ACTIVITIES_FILE, [])
             st.rerun()
+
+    if page == "📝 记录":
+        mobile_input_form()
+        timeline_list_view()
+    elif page == "📊 统计":
+        stats_view()
+    elif page == "⚙️ 设置":
+        st.markdown("### 模板管理")
+        st.info("此处未来可添加更多自定义模板功能")
+        st.json(st.session_state.templates)
 
 if __name__ == "__main__":
     main()
