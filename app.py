@@ -5,14 +5,15 @@ import os
 import time
 import pandas as pd
 import plotly.express as px
-import random
+import folium
+from streamlit_folium import st_folium
 
 # ==========================================
-# 1. 赛博霓虹配置 (Cyberpunk Config)
+# 1. 赛博空间配置 (Cyber Config)
 # ==========================================
 st.set_page_config(
-    page_title="Chronos",
-    page_icon="⚡",
+    page_title="Chronos Map",
+    page_icon="🛰️",
     layout="centered",
     initial_sidebar_state="collapsed"
 )
@@ -20,328 +21,345 @@ st.set_page_config(
 DATA_DIR = "data"
 if not os.path.exists(DATA_DIR): os.makedirs(DATA_DIR)
 ACTIVITIES_FILE = os.path.join(DATA_DIR, "activities.json")
+TEMPLATES_FILE = os.path.join(DATA_DIR, "templates.json")
 
-# --- 炫酷 CSS 注入 ---
+# --- 霓虹 CSS 系统 ---
 st.markdown("""
 <style>
-    /* 全局深色背景 */
+    /* 深空背景 */
     .stApp {
-        background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
+        background: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #020617 100%);
         color: #e2e8f0;
     }
-    
-    /* 隐藏杂项 */
     header, footer, #MainMenu { visibility: hidden; }
     
-    /* 霓虹卡片容器 */
-    .neon-card {
-        background: rgba(30, 41, 59, 0.7);
-        border: 1px solid rgba(148, 163, 184, 0.1);
-        backdrop-filter: blur(10px);
-        border-radius: 20px;
-        padding: 20px;
+    /* 玻璃拟态卡片 */
+    .glass-card {
+        background: rgba(15, 23, 42, 0.6);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 24px;
+        padding: 24px;
         margin-bottom: 20px;
-        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
-        border-left: 5px solid #8b5cf6; /* 紫色光条 */
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
     }
     
-    /* 标题样式 */
-    .card-title {
-        font-size: 14px; font-weight: 800; color: #a5b4fc;
-        letter-spacing: 1px; text-transform: uppercase; margin-bottom: 15px;
-        display: flex; align-items: center; gap: 8px;
+    /* 标题 */
+    .neon-text {
+        font-family: 'Courier New', monospace;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        background: linear-gradient(90deg, #4ade80, #2dd4bf);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 15px;
     }
     
-    /* 输入组件美化 */
+    /* 输入组件定制 */
     .stSelectbox div[data-baseweb="select"] > div, 
-    .stTextInput input, 
-    .stTimeInput input {
-        background-color: #334155 !important;
-        color: white !important;
-        border: 1px solid #475569 !important;
-        border-radius: 10px !important;
+    .stTextInput input, .stTimeInput input {
+        background-color: rgba(30, 41, 59, 0.8) !important;
+        color: #fff !important;
+        border: 1px solid #334155 !important;
+        border-radius: 12px !important;
     }
     
-    /* 提交按钮：渐变流光 */
+    /* 按钮特效 */
     .stButton button {
-        width: 100%;
-        background: linear-gradient(45deg, #6366f1, #8b5cf6, #ec4899);
-        border: none !important;
+        background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%) !important;
         color: white !important;
-        font-weight: 800 !important;
-        padding: 15px !important;
-        border-radius: 12px !important;
+        border: none !important;
+        height: 55px !important;
+        border-radius: 16px !important;
+        font-weight: bold !important;
         font-size: 18px !important;
-        transition: all 0.3s ease !important;
-        box-shadow: 0 10px 20px rgba(139, 92, 246, 0.3);
+        box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
+        transition: all 0.3s ease;
     }
     .stButton button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 15px 25px rgba(139, 92, 246, 0.5);
+        box-shadow: 0 0 25px rgba(139, 92, 246, 0.7);
+        transform: scale(1.02);
     }
     
-    /* 历史记录条目 */
-    .history-item {
-        background: #1e293b;
-        border-radius: 12px;
-        padding: 12px;
-        margin-bottom: 8px;
-        border-left: 3px solid #10b981;
-        display: flex; justify-content: space-between; align-items: center;
-    }
+    /* 地图容器微调 */
+    iframe { border-radius: 16px; }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 数据核心 (Data Core)
+# 2. 数据与逻辑核心
 # ==========================================
 
-def load_data():
-    if os.path.exists(ACTIVITIES_FILE):
+def load_json(path, default):
+    if os.path.exists(path):
         try:
-            with open(ACTIVITIES_FILE, 'r', encoding='utf-8') as f: return json.load(f)
+            with open(path, 'r', encoding='utf-8') as f: return json.load(f)
         except: pass
-    return []
+    return default
 
-def save_data(data):
-    with open(ACTIVITIES_FILE, 'w', encoding='utf-8') as f:
+def save_json(path, data):
+    with open(path, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
+# 初始化 Session
 if 'activities' not in st.session_state:
-    st.session_state.activities = load_data()
-
-# --- 智能提取历史选项 ---
-def get_history_options(field_name):
-    """从历史记录中提取去重的选项，按使用频率排序"""
-    if not st.session_state.activities: return []
-    vals = [a.get(field_name, "") for a in st.session_state.activities if a.get(field_name)]
-    # 统计频率
-    counts = {}
-    for v in vals: counts[v] = counts.get(v, 0) + 1
-    # 按频率倒序
-    sorted_vals = sorted(counts.keys(), key=lambda x: counts[x], reverse=True)
-    return sorted_vals
-
-# --- 混合输入组件 (核心交互) ---
-def hybrid_input(label, field_key, history_list, icon="🔹"):
-    """创建 下拉选择 + 手动输入 的组合组件"""
-    # 选项列表：头部固定为 '✨ 手动输入'
-    options = ["✨ 手动输入/新内容"] + history_list
+    st.session_state.activities = load_json(ACTIVITIES_FILE, [])
+if 'templates' not in st.session_state:
+    st.session_state.templates = load_json(TEMPLATES_FILE, {})
     
-    # 1. 下拉选择
-    selected = st.selectbox(
-        f"{icon} {label}", 
-        options, 
-        key=f"sel_{field_key}",
-        label_visibility="collapsed"
-    )
-    
-    final_value = ""
-    
-    # 2. 根据选择决定是否显示文本框
-    if selected == "✨ 手动输入/新内容":
-        # 手动输入模式
-        final_value = st.text_input(
-            f"输入新的{label}", 
-            placeholder=f"在此输入新的{label}...",
-            key=f"txt_{field_key}",
-            label_visibility="collapsed"
-        )
-    else:
-        # 历史选择模式
-        final_value = selected
-        # 显示一个只读的提示或者被禁用的输入框，保持界面高度一致
-        st.markdown(f"<div style='font-size:12px; color:#94a3b8; margin-top:-15px; margin-bottom:15px; padding-left:5px;'>已选择历史: {selected}</div>", unsafe_allow_html=True)
-        
-    return final_value
+# 智能提取历史分类选项
+def get_options(field):
+    # 从 activities 中提取所有唯一的分类值
+    values = set([a.get(field, "") for a in st.session_state.activities if a.get(field)])
+    # 加上 "➕ 新建..." 选项
+    return sorted(list(values)) + ["➕ 新建/自定义..."]
 
 # ==========================================
-# 3. 界面构建 (UI Builder)
+# 3. UI 构建
 # ==========================================
 
-# 顶部 Logo 区
+# 顶部 Logo
 st.markdown("""
-    <div style='text-align:center; margin-bottom:30px; padding-top:20px;'>
-        <div style='font-size:40px; font-weight:900; background: -webkit-linear-gradient(45deg, #6366f1, #ec4899); -webkit-background-clip: text; -webkit-text-fill-color: transparent;'>CHRONOS</div>
-        <div style='font-size:12px; color:#64748b; letter-spacing:2px;'>时空行为可视化日志</div>
+    <div style='text-align:center; padding: 20px 0 30px 0;'>
+        <div style='font-size:32px;'>🌌 CHRONOS <span style='font-size:14px; vertical-align:middle; background:#333; padding:2px 6px; border-radius:4px;'>MAP</span></div>
     </div>
 """, unsafe_allow_html=True)
 
-# === 区域 1: 时间控制 (5分钟刻度) ===
-st.markdown('<div class="neon-card">', unsafe_allow_html=True)
-st.markdown('<div class="card-title">⏱️ 时间跨度 (TIME)</div>', unsafe_allow_html=True)
+# ------------------------------------------
+# 卡片 A: 行为定义 (Context)
+# ------------------------------------------
+st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+st.markdown('<div class="neon-text">01 // 行为定义 (CONTEXT)</div>', unsafe_allow_html=True)
 
-# 自动计算默认时间
-if 'default_start' not in st.session_state:
+# 1. 核心入口：选择模板 OR 新建
+# 获取所有已知的行为片段(Episode)名称
+known_episodes = list(st.session_state.templates.keys())
+episode_options = ["✨ 输入新内容..."] + known_episodes
+
+selected_episode_opt = st.selectbox("准备做什么？", episode_options, label_visibility="collapsed")
+
+final_episode_name = ""
+final_template = {}
+is_new_template = False
+
+if selected_episode_opt == "✨ 输入新内容...":
+    # === 新建模式 ===
+    is_new_template = True
+    col_ep, col_tip = st.columns([3, 1])
+    with col_ep:
+        final_episode_name = st.text_input("输入活动名称", placeholder="如: 探索火星", label_visibility="collapsed")
+    
+    if final_episode_name:
+        # 检查是否碰巧输了一个已存在的名字
+        if final_episode_name in st.session_state.templates:
+             st.info(f"💡 发现 '{final_episode_name}' 已有模板，将使用旧分类")
+             final_template = st.session_state.templates[final_episode_name]
+             is_new_template = False
+        else:
+            # 真正的全新内容 -> 显示分类选择器
+            st.markdown("""<div style='margin: 10px 0; height:1px; background:rgba(255,255,255,0.1);'></div>""", unsafe_allow_html=True)
+            st.caption("构建分类体系 (第一次输入需完善，下次自动记住)")
+            
+            # 辅助函数：处理 下拉+新建 的逻辑
+            def smart_select(label, field_name):
+                opts = get_options(field_name)
+                sel = st.selectbox(label, opts, key=f"sel_{field_name}")
+                if sel == "➕ 新建/自定义...":
+                    return st.text_input(f"输入新{label}", key=f"txt_{field_name}")
+                return sel
+
+            c1, c2 = st.columns(2)
+            with c1:
+                d = smart_select("需求 (Demand)", "demand")
+                a = smart_select("活动 (Activity)", "activity")
+            with c2:
+                p = smart_select("企划 (Project)", "project")
+                b = smart_select("行为 (Behavior)", "behavior")
+            
+            final_template = {"demand": d, "project": p, "activity": a, "behavior": b}
+
+else:
+    # === 模板模式 ===
+    final_episode_name = selected_episode_opt
+    final_template = st.session_state.templates[selected_episode_opt]
+    # 显示一个漂亮的 Badge 告诉用户已经自动填好了
+    st.markdown(f"""
+    <div style='display:flex; gap:10px; margin-top:10px;'>
+        <span style='background:rgba(16, 185, 129, 0.2); color:#34d399; padding:4px 12px; border-radius:12px; font-size:12px; border:1px solid rgba(16, 185, 129, 0.3);'>
+            ✓ 已加载模板
+        </span>
+        <span style='color:#94a3b8; font-size:12px; padding-top:4px;'>
+            {final_template.get('demand', '')} > {final_template.get('activity', '')}
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
+
+st.markdown('</div>', unsafe_allow_html=True)
+
+
+# ------------------------------------------
+# 卡片 B: 时空定位 (Space-Time)
+# ------------------------------------------
+st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+st.markdown('<div class="neon-text">02 // 时空定位 (LOCATOR)</div>', unsafe_allow_html=True)
+
+# 1. 时间 (5分钟刻度)
+if 'def_start' not in st.session_state:
+    # 默认逻辑：接续上一条，或者当前时间取整
     now = datetime.datetime.now()
-    # 向下取整到最近的5分钟
-    minute = (now.minute // 5) * 5
-    rounded_now = now.replace(minute=minute, second=0, microsecond=0)
-    
-    st.session_state.default_start = rounded_now.time()
-    # 尝试接续上一条
     if st.session_state.activities:
-        last_end = datetime.datetime.fromisoformat(st.session_state.activities[-1]['end_time'])
-        if last_end.date() == datetime.date.today():
-            st.session_state.default_start = last_end.time()
-    
-    # 结束时间默认 +30分钟
-    st.session_state.default_end = (datetime.datetime.combine(datetime.date.today(), st.session_state.default_start) + datetime.timedelta(minutes=30)).time()
-
-c1, c2 = st.columns(2)
-with c1:
-    st.caption("开始时间")
-    # 核心：step=300 秒 = 5分钟
-    inp_start = st.time_input("Start", value=st.session_state.default_start, step=300, label_visibility="collapsed")
-with c2:
-    st.caption("结束时间")
-    inp_end = st.time_input("End", value=st.session_state.default_end, step=300, label_visibility="collapsed")
-
-st.markdown('</div>', unsafe_allow_html=True)
-
-
-# === 区域 2: 五级分类 (完全掌控) ===
-st.markdown('<div class="neon-card" style="border-left-color: #ec4899;">', unsafe_allow_html=True)
-st.markdown('<div class="card-title">🧬 内容定义 (CONTEXT)</div>', unsafe_allow_html=True)
-
-# 1. Episode (最高频的入口)
-st.markdown("**🎯 行为片段 (Episode)** - *你在做什么？*")
-episode_hist = get_history_options("episode")
-val_episode = hybrid_input("行为片段", "episode", episode_hist, icon="")
-
-# 智能预填充：如果选了历史Episode，尝试找回它上次的分类
-prefill = {}
-if val_episode in episode_hist and st.session_state.activities:
-    # 倒序查找最近一次该episode的记录
-    for act in reversed(st.session_state.activities):
-        if act['episode'] == val_episode:
-            prefill = act
-            break
-
-st.markdown("---")
-st.markdown("**⛓️ 四级分类体系** - *定义性质*")
-
-# 2x2 布局
-col_a, col_b = st.columns(2)
-
-with col_a:
-    st.caption("1. 需求 (Demand)")
-    # 如果有预填充，把历史值放到列表最前
-    hist_demand = get_history_options("demand")
-    val_demand = hybrid_input("需求", "demand", hist_demand)
-    
-    st.caption("3. 活动 (Activity)")
-    hist_activity = get_history_options("activity")
-    val_activity = hybrid_input("活动", "activity", hist_activity)
-
-with col_b:
-    st.caption("2. 企划 (Project)")
-    hist_project = get_history_options("project")
-    val_project = hybrid_input("企划", "project", hist_project)
-    
-    st.caption("4. 行为 (Behavior)")
-    hist_behavior = get_history_options("behavior")
-    val_behavior = hybrid_input("行为", "behavior", hist_behavior)
-
-st.markdown('</div>', unsafe_allow_html=True)
-
-# === 提交按钮 ===
-if st.button("🚀 写入日志 (LOG ENTRY)"):
-    if not val_episode:
-        st.error("⚠️ 至少得写个名字吧！(行为片段)")
+        last = st.session_state.activities[-1]
+        try:
+            last_end = datetime.datetime.fromisoformat(last['end_time'])
+            st.session_state.def_start = last_end.time()
+        except: st.session_state.def_start = now.time()
     else:
-        # 1. 优先使用手动输入的值，如果没填手动，检查下拉是否选了
-        # (Hybrid组件已经处理好了返回逻辑)
+        st.session_state.def_start = now.time()
         
-        # 2. 构建时间
+    st.session_state.def_end = (datetime.datetime.combine(datetime.date.today(), st.session_state.def_start) + datetime.timedelta(minutes=30)).time()
+
+c_t1, c_t2 = st.columns(2)
+with c_t1:
+    st.caption("开始")
+    inp_start = st.time_input("S", value=st.session_state.def_start, step=300, label_visibility="collapsed")
+with c_t2:
+    st.caption("结束")
+    inp_end = st.time_input("E", value=st.session_state.def_end, step=300, label_visibility="collapsed")
+
+# 2. 地点与地图
+st.markdown("""<div style='margin: 15px 0 5px 0; font-size:12px; color:#94a3b8;'>LOCATION</div>""", unsafe_allow_html=True)
+
+# 地点名称输入
+col_loc, col_map_btn = st.columns([4, 1])
+with col_loc:
+    inp_loc_name = st.text_input("地点名称", placeholder="如: 望京SOHO", label_visibility="collapsed")
+with col_map_btn:
+    show_map = st.toggle("🌍", help="打开地图选点")
+
+lat, lng = None, None
+
+# 只有当开关打开时才加载地图，节省资源，保持页面清爽
+if show_map:
+    st.caption("👆 点击地图选择位置")
+    # 默认坐标：北京 (或者你可以设为上一条记录的坐标)
+    default_loc = [39.9042, 116.4074] 
+    if st.session_state.activities:
+        last_act = st.session_state.activities[-1]
+        if last_act.get('lat'):
+            default_loc = [last_act['lat'], last_act['lng']]
+            
+    m = folium.Map(location=default_loc, zoom_start=14, tiles="CartoDB dark_matter")
+    
+    # 如果有点击，添加标记
+    if 'map_clicked' in st.session_state and st.session_state.map_clicked:
+        folium.Marker(
+            [st.session_state.map_clicked['lat'], st.session_state.map_clicked['lng']],
+            icon=folium.Icon(color="red", icon="info-sign")
+        ).add_to(m)
+
+    map_data = st_folium(m, height=250, width="100%", key="map_picker")
+    
+    if map_data and map_data.get("last_clicked"):
+        lat = map_data["last_clicked"]["lat"]
+        lng = map_data["last_clicked"]["lng"]
+        st.session_state.map_clicked = {"lat": lat, "lng": lng} # 存一下，防止刷新消失
+        st.info(f"📍 已定位: {lat:.4f}, {lng:.4f}")
+
+st.markdown('</div>', unsafe_allow_html=True)
+
+
+# ------------------------------------------
+# 提交按钮
+# ------------------------------------------
+if st.button("🚀 写入时空日志"):
+    if not final_episode_name:
+        st.error("⚠️ 请输入活动名称")
+    else:
+        # 1. 如果是新模板，保存它
+        if is_new_template:
+            st.session_state.templates[final_episode_name] = final_template
+            save_json(TEMPLATES_FILE, st.session_state.templates)
+            
+        # 2. 计算时间
         today = datetime.date.today()
         dt_start = datetime.datetime.combine(today, inp_start)
         dt_end = datetime.datetime.combine(today, inp_end)
         if dt_end < dt_start: dt_end += datetime.timedelta(days=1)
         duration = int((dt_end - dt_start).total_seconds() / 60)
         
-        # 3. 记录
-        new_record = {
+        # 3. 保存记录
+        new_rec = {
             "id": int(time.time()),
-            "episode": val_episode,
-            "demand": val_demand or "未分类",
-            "project": val_project or "未分类",
-            "activity": val_activity or "未分类",
-            "behavior": val_behavior or "未分类",
+            "episode": final_episode_name,
+            # 展开分类
+            "demand": final_template.get("demand", "未分类"),
+            "project": final_template.get("project", "未分类"),
+            "activity": final_template.get("activity", "未分类"),
+            "behavior": final_template.get("behavior", "未分类"),
+            # 时间与地点
             "start_time": dt_start.isoformat(),
             "end_time": dt_end.isoformat(),
             "duration": duration,
-            "color": random.choice(['#6366f1', '#8b5cf6', '#ec4899', '#10b981', '#f59e0b']), # 随机霓虹色
+            "location": inp_loc_name,
+            "lat": lat if lat else (st.session_state.get('map_clicked', {}).get('lat')),
+            "lng": lng if lng else (st.session_state.get('map_clicked', {}).get('lng')),
             "created_at": datetime.datetime.now().isoformat()
         }
         
-        st.session_state.activities.append(new_record)
+        st.session_state.activities.append(new_rec)
         st.session_state.activities.sort(key=lambda x: x['start_time'])
-        save_data(st.session_state.activities)
+        save_json(ACTIVITIES_FILE, st.session_state.activities)
         
         # 4. 更新默认时间
-        st.session_state.default_start = dt_end.time()
-        st.session_state.default_end = (dt_end + datetime.timedelta(minutes=30)).time()
+        st.session_state.def_start = dt_end.time()
+        st.session_state.def_end = (dt_end + datetime.timedelta(minutes=30)).time()
         
-        st.success(f"⚡ 已写入: {val_episode}")
-        time.sleep(0.5)
+        st.balloons() # 庆祝一下
+        time.sleep(1)
         st.rerun()
 
-# ==========================================
-# 4. 可视化与历史 (Visualization)
-# ==========================================
-
+# ------------------------------------------
+# 卡片 C: 仪表盘 (Dashboard) - 甜甜圈图
+# ------------------------------------------
 if st.session_state.activities:
-    st.markdown("---")
-    st.markdown('<div style="text-align:center; font-weight:800; color:#94a3b8; margin-bottom:10px;">📅 今日时空分布 (VISUALIZATION)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+    st.markdown('<div class="neon-text">03 // 时空分布 (VISUALS)</div>', unsafe_allow_html=True)
     
-    # 1. 数据准备
+    # 准备数据
     df = pd.DataFrame(st.session_state.activities)
-    
-    # 过滤今天的数据用于画图
     today_str = datetime.date.today().isoformat()
-    today_df = df[df['start_time'].str.startswith(today_str)].copy()
+    today_df = df[df['start_time'].str.startswith(today_str)]
     
     if not today_df.empty:
-        # 2. Plotly 甘特图
-        fig = px.timeline(
+        # 🎨 甜甜圈图
+        fig = px.pie(
             today_df, 
-            x_start="start_time", 
-            x_end="end_time", 
-            y="demand", # Y轴按需求分类
-            color="project", # 颜色按企划分类
-            hover_data=["episode", "duration"],
-            template="plotly_dark", # 深色主题
-            height=300
+            values='duration', 
+            names='demand', 
+            hole=0.6, # 甜甜圈孔径
+            color_discrete_sequence=px.colors.qualitative.Plotly, # 鲜艳配色
+            title="今日需求分布 (Demand)"
         )
         
         fig.update_layout(
             plot_bgcolor='rgba(0,0,0,0)',
             paper_bgcolor='rgba(0,0,0,0)',
-            margin=dict(l=10, r=10, t=10, b=10),
-            xaxis=dict(title="", showgrid=False),
-            yaxis=dict(title="", showgrid=True, gridcolor='#334155'),
-            showlegend=False
+            font_color='#e2e8f0',
+            showlegend=True,
+            legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5),
+            margin=dict(t=30, b=0, l=0, r=0),
+            height=300
         )
-        st.plotly_chart(fig, use_container_width=True)
-
-    # 3. 卡片式历史列表
-    st.markdown('<div style="margin-top:20px;"></div>', unsafe_allow_html=True)
-    for act in reversed(st.session_state.activities[-10:]): # 只显示最近10条
-        s = datetime.datetime.fromisoformat(act['start_time']).strftime('%H:%M')
-        e = datetime.datetime.fromisoformat(act['end_time']).strftime('%H:%M')
         
-        st.markdown(f"""
-        <div class="history-item" style="border-left-color: {act.get('color', '#10b981')}">
-            <div>
-                <div style="font-size:16px; font-weight:700; color:#fff;">{act['episode']}</div>
-                <div style="font-size:12px; color:#94a3b8;">
-                    {act['demand']} > {act['project']} > {act['activity']}
-                </div>
-            </div>
-            <div style="text-align:right;">
-                <div style="font-size:14px; font-weight:bold; color:#e2e8f0;">{s} - {e}</div>
-                <div style="font-size:12px; color:#64748b;">{act['duration']} min</div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        # 中心显示总时长
+        total_min = today_df['duration'].sum()
+        fig.add_annotation(text=f"{total_min//60}h {total_min%60}m", x=0.5, y=0.5, font_size=20, showarrow=False, font_color="white")
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+    else:
+        st.caption("今日暂无数据")
+
+    st.markdown('</div>', unsafe_allow_html=True)
